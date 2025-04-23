@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2 Truths and 1 Lie - Player View</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+
+<body>
+  <div class="player-screen">
+
+    <div class="player-controller">
+      <div class="join-section" id="joinSection">
+        <div class="player-form">
+          <h2>2 Truths and 1 Lie</h2>
+          <h3 class="welcome-heading">Welcome to the game!</h3>
+          <p>Join your friends and test how well you know each other! Submit 2 truths and 1 lie about yourself and see if others can spot the lie.</p>
+          <div class="form-group">
+            <label for="playerName">Your Name:</label>
+            <input type="text" id="playerName" required placeholder="Enter your name">
+          </div>
+          <div class="form-group">
+            <label for="gameCode">Game Code:</label>
+            <input type="text" id="gameCode" required placeholder="Enter game code">
+          </div>
+          <button id="joinBtn" class="theme-button play-button" aria-label="Join Game">
+            <span>Join Game</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="player-game-screen hidden" id="waitingScreen">
+        <div class="player-columns">
+          <div class="player-column left-column">
+            <div class="column-content-1">
+              <div class="game-intro">
+                <h2>How to Play</h2>
+                <div class="game-description">
+                  <p>In this game, each player submits 2 true statements and 1 false statement about themselves. Players are organized
+                    into teams to compete, taking turns to guess which statements are truths and which is the lie for each player.
+                    Teams earn points for correct guesses, and the team with the most points at the end wins the game!</p>
+                </div>
+              </div>
+
+              <div class="example-ticker" id="exampleTicker">
+              </div>
+
+              <div class="statements-form" id="submitStatementsContainer">
+                <h3>2 Truths and 1 Lie</h3>
+
+                <div class="statement-inputs">
+                  <div class="statement-input">
+                    <label for="playerTruth1">First truth about me</label>
+                    <textarea id="playerTruth1"></textarea>
+                  </div>
+
+                  <div class="statement-input">
+                    <label for="playerTruth2">Second truth about me</label>
+                    <textarea id="playerTruth2"></textarea>
+                  </div>
+
+                  <div class="statement-input">
+                    <label for="playerLie">One lie about me</label>
+                    <textarea id="playerLie"></textarea>
+                  </div>
+                </div>
+
+                <button id="submitStatements" class="theme-button primary-button">
+                  <i class="fas fa-check"></i> I'm Ready to Play
+                </button>
+
+                <div id="submissionStatus" class="submission-status hidden">
+                  <i class="fas fa-check-circle"></i> Your answers have been submitted!
+                </div>
+
+                <div id="waitingMessage" class="waiting-message hidden">
+                  <p>Your answers have been submitted! Waiting for other players to finish...</p>
+                </div>
+              </div>
+            </div>
+            <div class="column-content-2">
+              <div class="current-player-info">
+                <h3>Statements from:</h3>
+                <div id="current-player-name" class="current-player-name">Player Name</div>
+              </div>
+
+              <div class="guessing-instruction">
+                <p>Select one Truth</p>
+              </div>
+
+              <div id="statements-container" class="statements-container">
+                <div class="statement-option fade">
+                  <input type="radio" name="guess" id="statement1" value="0">
+                  <label for="statement1" class="statement-text">Statement 1</label>
+                </div>
+                <div class="statement-option fade">
+                  <input type="radio" name="guess" id="statement2" value="1">
+                  <label for="statement2" class="statement-text">Statement 2</label>
+                </div>
+                <div class="statement-option fade">
+                  <input type="radio" name="guess" id="statement3" value="2">
+                  <label for="statement3" class="statement-text">Statement 3</label>
+                </div>
+              </div>
+
+              <div class="guess-status">
+                <button id="submit-guess-button" class="theme-button primary-button">Submit Guess</button>
+              </div>
+            </div>
+            <div class="column-content-3">
+              <div id="results-container" class="results-container hidden">
+                <h2>Game Results</h2>
+                <div class="results-summary">
+                  <p id="results-summary-text">Game completed!</p>
+                </div>
+
+                <div id="team-scores-container" class="team-scores-container">
+                  <h3>Team Scores</h3>
+                  <div id="team-scores-list" class="scores-list">
+                  </div>
+                </div>
+
+                <div class="scores-columns-container">
+                  <div id="player-scores-column" class="scores-column">
+                    <h3>Player Scores</h3>
+                    <div id="player-scores-list" class="scores-list">
+                    </div>
+                  </div>
+
+                  <div id="best-guessers-column" class="scores-column">
+                    <h3>Best Lie Detectors</h3>
+                    <div id="best-guessers-list" class="scores-list">
+                    </div>
+                  </div>
+
+                  <div id="best-deceivers-column" class="scores-column">
+                    <h3>Best Deceivers</h3>
+                    <div id="best-deceivers-list" class="scores-list">
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <div class="player-column right-column">
+            <div class="game-control">
+              <div class="timer-container">
+                <h2>Game Status</h2>
+                <div class="countdown-timer" id="countdownTimer">
+                  <svg class="timer-circle" viewBox="0 0 100 100">
+                    <circle class="timer-circle-bg" cx="50" cy="50" r="45"></circle>
+                    <circle class="timer-circle-progress" cx="50" cy="50" r="45"></circle>
+                  </svg>
+                  <div class="timer-display">--</div>
+                </div>
+                <div id="start-game-message" class="start-game-message"></div>
+              </div>
+
+              <div id="waitingScreenTeam" class="team-badge hidden">
+                <div class="team-badge-icon"><i class="fas fa-users"></i></div>
+                <div class="team-badge-text">
+                  <div class="team-badge-label">YOUR TEAM</div>
+                  <div class="team-name"></div>
+                </div>
+              </div>
+
+              <button class="theme-button exit-game-btn">
+                Exit Game
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="statementScreen" class="statement-screen hidden">
+        <div id="playerStatements" class="player-statements"></div>
+      </div>
+
+      <div id="gameController" class="game-controller hidden">
+        <div class="controller-info">
+          <span class="player-name"></span>
+          <div class="connection-status">Connected</div>
+        </div>
+      </div>
+
+      <div class="results-screen hidden" id="resultsScreen">
+        <h2>Game Results</h2>
+
+        <div class="results-container" id="resultsContainer">
+
+        </div>
+
+        <button class="theme-button play-again-btn">
+          Play Again
+        </button>
+
+        <button class="theme-button exit-game-btn">
+          Exit Game
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="countdown-overlay" id="countdownOverlay">
+    <div class="countdown-number"></div>
+  </div>
+
+  <div id="error-overlay" class="error-overlay hidden">
+    <div class="error-content">
+      <h2>Error</h2>
+      <p id="error-message"></p>
+    </div>
+  </div>
+
+  <div id="connectionLostOverlay" class="overlay hidden">
+    <div class="overlay-content">
+      <h2>Connection Lost</h2>
+      <p>Please refresh the page to reconnect.</p>
+    </div>
+  </div>
+
+  <script src="player.js"></script>
+</body>
+
+</html>
