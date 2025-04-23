@@ -173,7 +173,7 @@ class GameAdmin {
         const port = window.location.port || '80';
         const isLocalDevelopment = port === '777';
         const protocol = isLocalDevelopment ? "ws:" : "wss:";
-        const host = isLocalDevelopment ? "127.0.0.1" : port === '3081' ? 'deploy.ylo.one' : 'gs.team-play.online/truth-and-lies-server';
+        const host = isLocalDevelopment ? "127.0.0.1" : port === '3081' ? 'deploy.ylo.one' : 'gs.team-play.online/one-lie-two-truths-server';
         const wsPort = isLocalDevelopment ? '8083' : port === '3081' ? '3091' : undefined;
 
         const wsUrl = wsPort ? `${protocol}//${host}:${wsPort}` : `${protocol}//${host}`;
@@ -187,7 +187,7 @@ class GameAdmin {
             this.reconnectAttempts = 0;
             this.updateConnectionStatus('Connected', true);
 
-            const gameCode = localStorage.getItem('truth_and_lies_admin_game_code') || null;
+            const gameCode = localStorage.getItem('one_lie_two_truthsadmin_game_code') || null;
 
             this.ws.send(JSON.stringify({
                 type: 'create_session',
@@ -244,7 +244,7 @@ class GameAdmin {
 
                     case 'session_created':
                         this.gameCode = data.sessionId;
-                        localStorage.setItem('truth_and_lies_admin_game_code', this.gameCode);
+                        localStorage.setItem('one_lie_two_truthsadmin_game_code', this.gameCode);
                         this.hideConnectionForm();
                         this.generateQRCode();
                         break;
@@ -1443,7 +1443,7 @@ class GameAdmin {
         const adminNameInput = document.getElementById('adminName');
         const saveAdminNameBtn = document.getElementById('saveAdminName');
 
-        const savedAdminName = localStorage.getItem('truth_and_lies_admin_name');
+        const savedAdminName = localStorage.getItem('one_lie_two_truthsadmin_name');
         if (savedAdminName) {
             this.adminName = savedAdminName;
             DEBUG.log('Admin name loaded from localStorage:', savedAdminName);
@@ -1468,7 +1468,7 @@ class GameAdmin {
                 const name = adminNameInput.value.trim();
                 if (name) {
                     this.adminName = name;
-                    localStorage.setItem('truth_and_lies_admin_name', name);
+                    localStorage.setItem('one_lie_two_truthsadmin_name', name);
                     adminNameModal.classList.remove('visible');
 
 
