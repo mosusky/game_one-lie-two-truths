@@ -16,7 +16,8 @@ const config = {
     },
     enableTeamPlayLogging: process.env.ENABLE_TEAMPLAY_LOGGING === 'true',
     enableApiValidation: process.env.ENABLE_API_VALIDATION === 'true',
-    defaultAnswerTime: parseInt(process.env.DEFAULT_ANSWER_TIME) || 10,
+    logsenabled: process.env.LOGS_ENABLED === 'true',
+    defaultAnswerTime: parseInt(process.env.DEFAULT_ANSWER_TIME) || 30,
     maxTeams: parseInt(process.env.MAX_TEAMS) || 4,
     exampleStatements: [
         [
@@ -54,7 +55,7 @@ async function validateApiCode(code) {
         };
 
         const req = https.request(options, (res) => {
-            console.log('API validation response status:', res.statusCode);
+            if (config.logsenabled) console.log('API validation response status:', res.statusCode);
             switch (res.statusCode) {
                 case 204:
                     resolve({ valid: true });
@@ -82,7 +83,7 @@ export let wss;
 
 if (config.runAsModule) {
     wss = new WebSocketServer({ noServer: true });
-    console.log(`Truths and Lies Game WebSocket server is up and running`);
+    if (config.logsenabled) console.log(`Truths and Lies Game WebSocket server is up and running`);
 } else if (config.secure) {
     const server = https.createServer({
         cert: fs.readFileSync(config.ssl.cert),
@@ -90,7 +91,7 @@ if (config.runAsModule) {
     });
     wss = new WebSocketServer({ server });
     server.listen(config.port, config.host, () => {
-        console.log(`Secure WebSocket server running on wss://${config.host}:${config.port}`);
+        if (config.logsenabled) console.log(`Secure WebSocket server running on wss://${config.host}:${config.port}`);
     });
 } else {
     wss = new WebSocketServer({
@@ -98,7 +99,7 @@ if (config.runAsModule) {
         port: config.port
     });
 
-    console.log(`WebSocket server running on ws://${config.host}:${config.port}`);
+    if (config.logsenabled) console.log(`WebSocket server running on ws://${config.host}:${config.port}`);
 }
 
 const activeGames = new Map();
@@ -142,15 +143,21 @@ class Game {
 
         this.answerTime = config.defaultAnswerTime;
         this.currentRound = 0;
-        this.roundsCount = 5;
+        this.roundsCount = 3;
 
         this.statusMessage = '';
         this.statusIsReady = false;
 
-        this.readyPlayers = new Set();
+        this.playerOrder = [];
         this.scores = new Map();
+        this.readyPlayers = new Set(); 
+        this.allSubmittedPlayers = new Set();
         this.currentPlayerIndex = 0;
+        this.allStatementSets = [];
         this.currentStatementIndex = 0;
+
+        this.adminScore = 0;
+        this.adminLieCorrectCount = 0;
 
         this.enableTeamPlayLogging = config.enableTeamPlayLogging;
 
@@ -159,15 +166,9 @@ class Game {
 
     addPlayer(playerSocket, playerName, existingPlayerId = null, existingTeam = null) {
         const playerId = existingPlayerId || uuidv4();
-        console.log('Adding player:', {
-            name: playerName,
-            id: playerId,
-            isReconnect: !!existingPlayerId,
-            existingTeam
-        });
 
         if (playerGames.has(playerId) && playerGames.get(playerId) !== this.gameCode) {
-            console.log('Player already in another game:', playerId);
+            if (config.logsenabled) console.log('Player already in another game:', playerId);
             return false;
         }
 
@@ -179,12 +180,12 @@ class Game {
                      disconnectedPlayer ? disconnectedPlayer.teamId : 0);
 
         if (existingPlayer) {
-            console.log('Player reconnecting with existing data:', playerId);
+            if (config.logsenabled) console.log('Player reconnecting with existing data:', playerId);
             existingPlayer.socket = playerSocket;
             existingPlayer.name = playerName;
             existingPlayer.teamId = teamId;
         } else if (disconnectedPlayer) {
-            console.log('Player reconnecting from disconnected state:', playerId);
+            if (config.logsenabled) console.log('Player reconnecting from disconnected state:', playerId);
             this.players.set(playerId, {
                 socket: playerSocket,
                 name: playerName,
@@ -201,9 +202,9 @@ class Game {
             }
 
             this.disconnectedPlayers.delete(playerId);
-            console.log('Restored player data from disconnected state:', playerId);
+            if (config.logsenabled) console.log('Restored player data from disconnected state:', playerId);
         } else {
-            console.log('New player joining:', playerId);
+            if (config.logsenabled) console.log('New player joining:', playerId);
             this.players.set(playerId, {
                 socket: playerSocket,
                 name: playerName,
@@ -272,7 +273,7 @@ class Game {
 
                 this.teams.get(teamId).push(playerId);
 
-                console.log(`Auto-assigned player ${playerName} (${playerId}) to team ${teamId} (${this.teamNames.get(teamId)})`);
+                if (config.logsenabled) console.log(`Auto-assigned player ${playerName} (${playerId}) to team ${teamId} (${this.teamNames.get(teamId)})`);
             }
         }
 
@@ -303,7 +304,7 @@ class Game {
     }
 
     removePlayer(playerId) {
-        console.log("player removed", playerId);
+        if (config.logsenabled) console.log("player removed", playerId);
         const player = this.players.get(playerId);
         if (player) {
             const playerData = {
@@ -317,7 +318,7 @@ class Game {
                 lastDisconnectedAt: Date.now()
             };
             this.disconnectedPlayers.set(playerId, playerData);
-            console.log(`Stored player data for ${playerId} in disconnectedPlayers map`);
+            if (config.logsenabled) console.log(`Stored player data for ${playerId} in disconnectedPlayers map`);
 
             if (player.teamId > 0 && this.teams.has(player.teamId)) {
                 const teamPlayers = this.teams.get(player.teamId);
@@ -389,10 +390,10 @@ class Game {
             clearTimeout(this.countdownTimeoutId);
         }
 
-        this.countdownContext = context; 
+        this.countdownContext = context;
         this.countdownDuration = seconds;
         this.countdownEndTime = Date.now() + (seconds * 1000);
-        console.log(`Started ${context} countdown for ${seconds} seconds, ending at ${new Date(this.countdownEndTime).toISOString()}`);
+        if (config.logsenabled) console.log(`Started ${context} countdown for ${seconds} seconds, ending at ${new Date(this.countdownEndTime).toISOString()}`);
 
         return this.getCountdownInfo();
     }
@@ -401,7 +402,7 @@ class Game {
         if (!this.countdownEndTime) return 0;
 
         const remaining = Math.ceil((this.countdownEndTime - Date.now()) / 1000);
-        return Math.max(0, remaining); 
+        return Math.max(0, remaining);
     }
 
     scheduleCountdownCompletion(seconds, callback) {
@@ -434,62 +435,34 @@ class Game {
         };
     }
 
-    handlePlayerGuess(playerId, targetPlayerId, guessIndex) {
-        console.log(`Player ${playerId} guessing statement ${guessIndex} for player ${targetPlayerId}`);
-        if (this.gamePhase !== 'guessing') return { success: false, error: 'Not in guessing phase' };
+    submitStatements(playerId, statementSets) {
+        if (config.logsenabled) console.log(`${playerId} submitting statements:`, statementSets);
 
-        const player = this.players.get(playerId);
-        if (!player) return { success: false, error: 'Player not found' };
+        if (!statementSets || !Array.isArray(statementSets)) {
+            return { success: false, error: 'Invalid statement format: expected statementSets array' };
+        }
 
-        const targetPlayer = this.players.get(targetPlayerId);
-        if (!targetPlayer) return { success: false, error: 'Target player not found' };
+        if (statementSets.length !== this.roundsCount) {
+            return {
+                success: false,
+                error: `Expected ${this.roundsCount} statement sets but received ${statementSets.length}`
+            };
+        }
 
-        if (!player.guesses) player.guesses = {};
-        player.guesses[targetPlayerId] = guessIndex;
-
-        const isCorrect = targetPlayer.lieIndex === guessIndex;
-
-        this.gameEvents.push({
-            type: 'player_guess',
-            time: new Date().toISOString(),
-            playerId,
-            name: player.name,
-            targetPlayerId,
-            targetPlayerName: targetPlayer.name,
-            guessIndex,
-            isCorrect
-        });
-
-        if (isCorrect) {
-            if (this.teamMode === 'allVsAll') {
-                player.score = (player.score || 0) + 1;
-            } else {
-                const teamId = player.teamId;
-                if (teamId) {
-                    this.teamScores[teamId] = (this.teamScores[teamId] || 0) + 1;
-                }
+        for (const set of statementSets) {
+            if (!set.round || !set.truths || !Array.isArray(set.truths) || set.truths.length !== 2 || !set.lie) {
+                return {
+                    success: false,
+                    error: `Invalid statement set format for round ${set.round}`
+                };
             }
         }
 
-        return {
-            success: true,
-            isCorrect,
-            correctIndex: targetPlayer.lieIndex
-        };
-    }
+        const sortedSets = [...statementSets].sort((a, b) => a.round - b.round);
 
-    submitStatements(playerId, statements) {
         if (playerId === 'admin') {
-            if (!statements.truths || !Array.isArray(statements.truths) || statements.truths.length !== 2) {
-                return { success: false, error: 'You must provide exactly 2 true statements' };
-            }
-            if (statements.lie === null || statements.lie === undefined || statements.lie === '') {
-                return { success: false, error: 'You must provide 1 false statement' };
-            }
-
             this.adminStatements = {
-                truths: statements.truths,
-                lie: statements.lie
+                statementSets: sortedSets
             };
 
             this.readyPlayers.add('admin');
@@ -508,21 +481,12 @@ class Game {
         const player = this.players.get(playerId);
         if (!player) return false;
 
-        if (!statements.truths || !Array.isArray(statements.truths) || statements.truths.length !== 2) {
-            return { success: false, error: 'You must provide exactly 2 true statements' };
-        }
-        if (statements.lie === null || statements.lie === undefined || statements.lie === '') {
-            return { success: false, error: 'You must provide 1 false statement' };
-        }
-
         if (!player.statements) {
             player.statements = {};
         }
 
-        player.statements.truths = statements.truths;
-        player.statements.lie = statements.lie;
+        player.statements.statementSets = sortedSets;
         player.submittedStatements = true;
-        console.log(player.statements, 123);
 
         this.readyPlayers.add(playerId);
         player.ready = true;
@@ -563,7 +527,7 @@ class Game {
 
     setAdminInfo(adminName) {
         this.adminName = adminName;
-        console.log('Admin name set to:', this.adminName);
+        if (config.logsenabled) console.log('Admin name set to:', this.adminName);
 
         this.broadcastToAll({
             type: 'admin_info_updated',
@@ -604,8 +568,9 @@ class Game {
             return { success: true, message: 'All vs All mode activated' };
         }
 
+        const existingTeamNames = new Map(this.teamNames);
+
         this.teams.clear();
-        this.teamNames.clear();
 
         const playerIds = Array.from(this.players.keys());
 
@@ -614,10 +579,16 @@ class Game {
 
             const shuffledTeamNames = [...this.availableTeamNames].sort(() => 0.5 - Math.random());
 
+            this.teamNames.clear();
+
             for (let i = 1; i <= teamCount; i++) {
                 this.teams.set(i, []);
-                const teamName = shuffledTeamNames[i-1] || `Team ${i}`;
-                this.teamNames.set(i, teamName);
+                if (existingTeamNames.has(i)) {
+                    this.teamNames.set(i, existingTeamNames.get(i));
+                } else {
+                    const teamName = shuffledTeamNames[i-1] || `Team ${i}`;
+                    this.teamNames.set(i, teamName);
+                }
             }
 
             const shuffled = [...playerIds].sort(() => 0.5 - Math.random());
@@ -661,9 +632,9 @@ class Game {
         const scores = {
             teams: [],
             players: [],
-            bestGuessers: [],  
-            bestDeceivers: [],  
-            lieRoundsTotal: this.lieRoundsTotal || 0 
+            bestGuessers: [],
+            bestDeceivers: [],
+            lieRoundsTotal: this.lieRoundsTotal || 0
         };
 
         for (const [playerId, player] of this.players.entries()) {
@@ -677,7 +648,7 @@ class Game {
 
             if (player.guessesReceived && player.guessesReceived > 0) {
                 deceptionRate = player.successfulDeceptions / player.guessesReceived;
-                console.log(`Player ${player.name} deception rate: ${player.successfulDeceptions}/${player.guessesReceived} = ${deceptionRate}`);
+                if (config.logsenabled) console.log(`Player ${player.name} deception rate: ${player.successfulDeceptions}/${player.guessesReceived} = ${deceptionRate}`);
             }
 
             scores.players.push({
@@ -707,7 +678,7 @@ class Game {
 
             if (this.adminGuessesReceived && this.adminGuessesReceived > 0) {
                 adminDeceptionRate = this.adminSuccessfulDeceptions / this.adminGuessesReceived;
-                console.log(`Admin deception rate: ${this.adminSuccessfulDeceptions}/${this.adminGuessesReceived} = ${adminDeceptionRate}`);
+                if (config.logsenabled) console.log(`Admin deception rate: ${this.adminSuccessfulDeceptions}/${this.adminGuessesReceived} = ${adminDeceptionRate}`);
             }
 
             scores.players.push({
@@ -764,7 +735,7 @@ class Game {
         });
 
         scores.bestGuessers = [...scores.players]
-            .filter(p => p.lieCorrectCount > 0) 
+            .filter(p => p.lieCorrectCount > 0)
             .sort((a, b) => b.lieCorrectCount - a.lieCorrectCount)
             .slice(0, 3);
 
@@ -793,7 +764,6 @@ class Game {
     }
 
     assignPlayerToTeam(playerId, teamId) {
-        console.log(playerId, teamId, 123);
         const player = this.players.get(playerId);
         if (!player) return { success: false, error: 'Player not found' };
 
@@ -825,6 +795,28 @@ class Game {
         return { success: true };
     }
 
+    updateTeamName(teamId, newName) {
+        if (!teamId || !newName) {
+            return { success: false, error: 'Team ID and new name are required' };
+        }
+
+        newName = newName.trim();
+        if (newName.length < 1 || newName.length > 30) {
+            return { success: false, error: 'Team name must be between 1 and 30 characters' };
+        }
+
+        if (!this.teams.has(parseInt(teamId))) {
+            return { success: false, error: 'Team not found' };
+        }
+
+        this.teamNames.set(parseInt(teamId), newName);
+
+        if (config.logsenabled) console.log(`Team ${teamId} name updated to: ${newName}`);
+
+        this.broadcastGameState();
+        return { success: true };
+    }
+
     startGame(settings = {}) {
         if (this.gameStarted) {
             return { success: false, error: 'Game already started' };
@@ -843,7 +835,7 @@ class Game {
 
         this.gameStarted = true;
         this.gameEnded = false;
-        this.gamePhase = 'countdown'; 
+        this.gamePhase = 'countdown';
         this.currentRound = 1;
         this.currentPlayerIndex = 0;
         this.currentStatementIndex = 0;
@@ -867,9 +859,48 @@ class Game {
             playerCount: this.players.size
         });
 
+        this.gatherStatementSets();
+
         this.startNewRound();
 
         return { success: true };
+    }
+
+    gatherStatementSets() {
+        this.allStatementSets = [];
+
+        if (this.adminStatements && this.adminStatements.statementSets) {
+            const adminSets = this.adminStatements.statementSets.map(set => ({
+                ...set,
+                playerId: 'admin',
+                playerName: this.adminName || 'Admin',
+                teamId: this.adminTeamId || 0,
+                used: false,
+                setId: `admin_${set.round}_${uuidv4().slice(0, 8)}` 
+            }));
+            this.allStatementSets.push(...adminSets);
+        }
+
+        this.players.forEach((player, playerId) => {
+            if (player.statements && player.statements.statementSets) {
+                const playerSets = player.statements.statementSets.map(set => ({
+                    ...set,
+                    playerId,
+                    playerName: player.name,
+                    teamId: player.teamId || 0,
+                    used: false,
+                    setId: `${playerId}_${set.round}_${uuidv4().slice(0, 8)}` 
+                }));
+                this.allStatementSets.push(...playerSets);
+            }
+        });
+
+        this.allStatementSets = this.shuffleArray(this.allStatementSets);
+
+        if (config.logsenabled) {
+            console.log(this.allStatementSets, 123);
+            console.log(`Gathered ${this.allStatementSets.length} statement sets for the game`);
+        }
     }
 
     resetSession() {
@@ -895,13 +926,13 @@ class Game {
         this.countdownSeconds = 0;
         this.countdownContext = null;
         this.countdownCallback = null;
-        this.countdownEndTime = null; 
+        this.countdownEndTime = null;
 
 
         if (this.countdownTimeoutId) {
             clearTimeout(this.countdownTimeoutId);
             this.countdownTimeoutId = null;
-            console.log('Cleared scheduled timer callback');
+            if (config.logsenabled) console.log('Cleared scheduled timer callback');
         }
 
         if (this.teamMode !== 'adminManaged') {
@@ -910,11 +941,11 @@ class Game {
 
         this.players.forEach(player => {
             player.ready = false;
-            player.statements = {}; 
+            player.statements = {};
             player.lieIndex = null;
             player.guesses = {};
             player.score = 0;
-            player.submittedStatements = false; 
+            player.submittedStatements = false;
             player.lieGuessCount = 0;
             player.lieCorrectCount = 0;
             player.guessesReceived = 0;
@@ -926,6 +957,12 @@ class Game {
         });
 
         this.readyPlayers.clear();
+
+        this.adminScore = 0;
+        this.adminLieCorrectCount = 0;
+        this.adminGuessesReceived = 0;
+        this.adminSuccessfulDeceptions = 0;
+        this.adminGuesses = {};
 
         this.broadcastToAll({
             type: 'session_reset'
@@ -940,19 +977,12 @@ class Game {
             return;
         }
 
-        const playerIds = Array.from(this.players.keys());
-        if (playerIds.length === 0) return;
-
-        this.currentPlayerIndex = (this.currentPlayerIndex + 1) % playerIds.length;
-        this.currentStatementMapping = ['truth', 'truth', 'lie'];
-
-        this.currentStatementMapping.sort(() => Math.random() - 0.5);
+        this.startGuessingRound();
 
         this.broadcastToAll({
             type: 'new_round',
             round: this.currentRound,
-            totalRounds: this.roundsCount,
-            playerIndex: this.currentPlayerIndex
+            totalRounds: this.allStatementSets.length
         });
 
         this.broadcastGameState();
@@ -974,7 +1004,7 @@ class Game {
             .map(([playerId]) => playerId);
 
         if (eligiblePlayers.length === 0) {
-            console.log('No eligible players with statements!');
+            if (config.logsenabled) console.log('No eligible players with statements!');
             return;
         }
 
@@ -984,7 +1014,7 @@ class Game {
         const currentPlayer = this.players.get(currentPlayerId);
 
         if (!currentPlayer) {
-            console.log('Current player not found:', currentPlayerId);
+            if (config.logsenabled) console.log('Current player not found:', currentPlayerId);
             return;
         }
 
@@ -1032,13 +1062,13 @@ class Game {
                 name: this.adminName || 'Admin',
                 teamId: this.adminTeamId
             };
-            console.log('Admin is submitting a guess');
+            if (config.logsenabled) console.log('Admin is submitting a guess');
 
             if (this.adminScore === undefined) this.adminScore = 0;
             if (this.adminLieCorrectCount === undefined) this.adminLieCorrectCount = 0;
         } else {
             player = this.players.get(playerId);
-            console.log('Player submitting guess:', player);
+            if (config.logsenabled) console.log('Player submitting guess:', player);
 
             if (!player) {
                 return { success: false, error: 'Player not found' };
@@ -1050,46 +1080,18 @@ class Game {
             if (!player.guesses) player.guesses = {};
         }
 
-        let targetStatements;
-        let targetLieIndex;
-        let targetName;
 
-        if (targetPlayerId === 'admin') {
-            const adminStatements = this.getAdminStatements();
-            if (!adminStatements) {
-                return { success: false, error: 'Admin statements not found' };
-            }
+        if (targetPlayerId !== this.currentGuessingPlayerId) {
+            return { success: false, error: 'Target player is not the current guessing player' };
+        }
 
-            targetStatements = [...adminStatements.truths, adminStatements.lie];
+        const targetStatements = this.currentStatements.map(s => s.text);
+        const targetLieIndex = this.currentLieShuffledIndex;
+        const targetName = this.currentSet.playerName;
 
-            if (adminStatements.lieIndex === undefined) {
-                targetLieIndex = adminStatements.truths.length; 
-            } else {
-                targetLieIndex = adminStatements.lieIndex;
-            }
-
-            console.log('Admin targetLieIndex:', targetLieIndex, 'Total statements:', targetStatements.length);
-            targetName = this.adminName || 'Admin';
-        } else {
-            const targetPlayer = this.players.get(targetPlayerId);
-            if (!targetPlayer) {
-                return { success: false, error: 'Target player not found' };
-            }
-
-            if (!targetPlayer.statements || !targetPlayer.statements.truths || !targetPlayer.statements.lie) {
-                return { success: false, error: 'Target player has no valid statements' };
-            }
-
-            targetStatements = [...targetPlayer.statements.truths, targetPlayer.statements.lie];
-
-            if (targetPlayer.lieIndex === undefined) {
-                targetLieIndex = targetPlayer.statements.truths.length;
-            } else {
-                targetLieIndex = targetPlayer.lieIndex;
-            }
-
-            console.log('Player targetLieIndex:', targetLieIndex, 'Total statements:', targetStatements.length);
-            targetName = targetPlayer.name;
+        if (config.logsenabled) {
+            console.log('Current guessing for:', targetName);
+            console.log('Lie index:', targetLieIndex, 'Total statements:', targetStatements.length);
         }
 
         if (!this.gameStarted || this.gamePhase !== 'guessing') {
@@ -1100,17 +1102,26 @@ class Game {
             return { success: false, error: 'Invalid guess index' };
         }
 
+        const setId = this.currentSet ? this.currentSet.setId : null;
+
+        if (!setId) {
+            return { success: false, error: 'No active statement set' };
+        }
+
         if (playerId === 'admin') {
             if (!this.adminGuesses) {
                 this.adminGuesses = {};
             }
-            this.adminGuesses[targetPlayerId] = guessIndex;
+            this.adminGuesses[setId] = guessIndex;
         } else {
-            player.guesses[targetPlayerId] = guessIndex;
+            if (!player.guesses) {
+                player.guesses = {};
+            }
+            player.guesses[setId] = guessIndex;
         }
 
         let lieShuffledIndex = this.currentLieShuffledIndex;
-        console.log('Using shuffled lie index for validation:', lieShuffledIndex);
+        if (config.logsenabled) console.log('Using shuffled lie index for validation:', lieShuffledIndex);
 
         let isCorrect;
 
@@ -1128,24 +1139,14 @@ class Game {
             targetPlayer.guessesReceived++;
         }
 
-        console.log('Debug - Statement validation:', {
-            playerId,
-            targetPlayerId,
-            guessIndex,
-            originalLieIndex: targetLieIndex,
-            shuffledLieIndex: lieShuffledIndex,
-            questionType: this.currentQuestionType,
-            targetStatements: targetStatements ? targetStatements.length : 0
-        });
-
         if (this.currentQuestionType === 'truth') {
             isCorrect = lieShuffledIndex !== guessIndex;
 
             if (isCorrect) {
                 if (playerId === 'admin') {
-                    this.adminScore++; 
+                    this.adminScore++;
                 } else {
-                    player.score++; 
+                    player.score++;
                 }
             }
         } else {
@@ -1153,25 +1154,25 @@ class Game {
 
             if (isCorrect) {
                 if (playerId === 'admin') {
-                    this.adminScore++; 
-                    this.adminLieCorrectCount++; 
+                    this.adminScore++;
+                    this.adminLieCorrectCount++;
                 } else {
-                    player.score++; 
-                    player.lieCorrectCount++; 
+                    player.score++;
+                    player.lieCorrectCount++;
                 }
             }
             else {
                 if (targetPlayerId === 'admin') {
                     this.adminSuccessfulDeceptions++;
-                    console.log(`Admin deceived player ${playerId}! adminSuccessfulDeceptions=${this.adminSuccessfulDeceptions}, adminGuessesReceived=${this.adminGuessesReceived}`);
+                    if (config.logsenabled) console.log(`Admin deceived player ${playerId}! adminSuccessfulDeceptions=${this.adminSuccessfulDeceptions}, adminGuessesReceived=${this.adminGuessesReceived}`);
                 } else if (targetPlayer) {
                     targetPlayer.successfulDeceptions++;
-                    console.log(`Player ${targetPlayerId} deceived player ${playerId}! successfulDeceptions=${targetPlayer.successfulDeceptions}, guessesReceived=${targetPlayer.guessesReceived}`);
+                    if (config.logsenabled) console.log(`Player ${targetPlayerId} deceived player ${playerId}! successfulDeceptions=${targetPlayer.successfulDeceptions}, guessesReceived=${targetPlayer.guessesReceived}`);
                 }
             }
         }
 
-        console.log(`Player ${playerId} guessed statement ${guessIndex} as a ${this.currentQuestionType}. ` +
+        if (config.logsenabled) console.log(`Player ${playerId} guessed statement ${guessIndex} as a ${this.currentQuestionType}. ` +
                    `Actual lie index (shuffled): ${lieShuffledIndex}. Guess is ${isCorrect ? 'correct' : 'incorrect'}.`);
 
         if (isCorrect && this.teamMode !== 'allVsAll') {
@@ -1213,6 +1214,10 @@ class Game {
             questionType: this.currentQuestionType
         });
 
+        if (isCorrect) {
+            this.broadcastGameState();
+        }
+
         this.gameEvents.push({
             type: 'guess_submitted',
             time: new Date().toISOString(),
@@ -1232,7 +1237,7 @@ class Game {
             truthIndices: truthIndices,
             lieIndex: targetLieIndex,
             questionType: this.currentQuestionType,
-            scores: updatedScores 
+            scores: updatedScores
         };
     }
 
@@ -1262,7 +1267,7 @@ class Game {
             adminName: this.adminName,
             statusMessage: this.statusMessage,
             statusIsReady: this.statusIsReady,
-            questionType: this.currentQuestionType, 
+            questionType: this.currentQuestionType,
             players: Array.from(this.players.entries()).map(([id, player]) => ({
                 id,
                 name: player.name,
@@ -1282,30 +1287,17 @@ class Game {
         }
 
         if (this.gamePhase === 'guessing' && this.currentGuessingPlayerId) {
-            if (this.currentGuessingPlayerId === 'admin') {
-                const adminStatements = this.getAdminStatements();
-                if (adminStatements) {
-                    baseGameState.currentGuessingPlayer = {
-                        playerId: 'admin',
-                        name: this.adminName || 'Admin',
-                        teamId: this.adminTeamId,
-                        teamName: this.adminTeamId > 0 ? this.teamNames.get(this.adminTeamId) : null,
-                        statements: this.preparePlayerStatementsForGuessing(adminStatements),
-                        questionType: this.currentQuestionType 
-                    };
-                }
-            } else {
-                const currentPlayer = this.players.get(this.currentGuessingPlayerId);
-                if (currentPlayer && currentPlayer.statements) {
-                    baseGameState.currentGuessingPlayer = {
-                        playerId: this.currentGuessingPlayerId,
-                        name: currentPlayer.name,
-                        teamId: currentPlayer.teamId,
-                        teamName: currentPlayer.teamId > 0 ? this.teamNames.get(currentPlayer.teamId) : null,
-                        statements: this.preparePlayerStatementsForGuessing(currentPlayer.statements),
-                        questionType: this.currentQuestionType 
-                    };
-                }
+            if (this.currentSet) {
+                baseGameState.currentGuessingPlayer = {
+                    playerId: this.currentGuessingPlayerId,
+                    name: this.currentSet.playerName,
+                    teamId: this.currentSet.teamId,
+                    teamName: this.currentSet.teamId > 0 ? this.teamNames.get(this.currentSet.teamId) : null,
+                    statements: this.currentStatements,
+                    questionType: this.currentQuestionType,
+                    round: this.currentSet.round,
+                    setId: this.currentSet.setId
+                };
             }
         }
 
@@ -1334,7 +1326,8 @@ class Game {
                     })),
                 readyPlayers: Array.from(this.readyPlayers),
                 currentPlayerIndex: this.currentPlayerIndex,
-                roundTimer: this.roundTimer
+                roundTimer: this.roundTimer,
+                myGuesses: this.adminGuesses || {}
             };
             this.sendToAdmin(adminGameState);
 
@@ -1347,14 +1340,24 @@ class Game {
                     myGuesses: player.guesses || {}
                 };
 
-                if (this.gamePhase === 'guessing' && this.currentPlayerIndex !== null) {
-                    const currentPlayer = this.getCurrentRoundPlayer();
-                    if (currentPlayer) {
-                        playerGameState.currentPlayerStatements = {
-                            playerId: this.getCurrentRoundPlayerId(),
-                            name: currentPlayer.name,
-                            statements: currentPlayer.statements
+                if (this.gamePhase === 'guessing' && this.currentGuessingPlayerId) {
+                    if (this.currentSet) {
+                        playerGameState.currentGuessingPlayer = {
+                            playerId: this.currentGuessingPlayerId,
+                            name: this.currentSet.playerName,
+                            teamId: this.currentSet.teamId,
+                            teamName: this.currentSet.teamId > 0 ? this.teamNames.get(this.currentSet.teamId) : null,
+                            statements: this.currentStatements,
+                            questionType: this.currentQuestionType,
+                            round: this.currentSet.round,
+                            setId: this.currentSet.setId
                         };
+
+                        const setId = this.currentSet.setId;
+
+                        if (player.guesses && player.guesses[setId] !== undefined) {
+                            playerGameState.myCurrentGuess = player.guesses[setId];
+                        }
                     }
                 }
 
@@ -1378,124 +1381,61 @@ class Game {
     }
 
     initializeGuessingPhase(answerTime = 10) {
-        console.log(`Initializing guessing phase with ${answerTime}s per round`);
+        if (config.logsenabled) console.log(`Initializing guessing phase with ${answerTime}s per round`);
 
         this.answerTime = answerTime;
 
-        this.playerOrder = Array.from(this.players.keys());
+        if (config.logsenabled) console.log(`Game will use ${this.allStatementSets.length} randomized statement sets`);
 
-        const adminStatements = this.getAdminStatements();
-        if (adminStatements && adminStatements.truths && adminStatements.lie) {
-            this.playerOrder.push('admin');
-            console.log('Added admin to the player rotation for guessing phase');
-        }
-
-        this.playerOrder = this.shuffleArray(this.playerOrder);
-
-        this.currentPlayerIndex = 0;
-
-        this.currentGuessingPlayerId = this.playerOrder[0];
 
         this.startGuessingRound();
     }
 
-    getAdminStatements() {
-        if (!this.adminStatements || !this.adminStatements.truths || !this.adminStatements.lie) {
-            console.log('Admin statements not properly set:', this.adminStatements);
-            return null;
-        }
-        return this.adminStatements;
-    }
 
     startGuessingRound() {
-        const currentPlayerId = this.playerOrder[this.currentPlayerIndex];
-        this.currentGuessingPlayerId = currentPlayerId;
+        if (this.allStatementSets.length === 0 || this.allStatementSets.every(set => set.used)) {
+            if (config.logsenabled) console.log('All statement sets have been used, ending the game');
+            this.endGame();
+            return;
+        }
+
+        const currentSetIndex = this.allStatementSets.findIndex(set => !set.used);
+        const currentSet = this.allStatementSets[currentSetIndex];
+
+        this.currentSet = currentSet;
+        this.currentSetIndex = currentSetIndex;
+
+        currentSet.used = true;
+
+        this.currentGuessingPlayerId = currentSet.playerId;
 
         this.currentQuestionType = Math.random() < 0.5 ? 'truth' : 'lie';
-        console.log(`This guessing round asks players to select a ${this.currentQuestionType}`);
+        if (config.logsenabled) console.log(`This guessing round asks players to select a ${this.currentQuestionType}`);
 
         if (this.currentQuestionType === 'lie') {
             if (this.lieRoundsTotal === undefined) this.lieRoundsTotal = 0;
             this.lieRoundsTotal++;
         }
 
-        let statements;
-        let playerName;
-
-        if (currentPlayerId === 'admin') {
-            statements = this.getAdminStatements();
-            playerName = this.adminName || 'Admin';
-
-            if (!statements || !statements.truths || statements.truths.length !== 2 || !statements.lie) {
-                console.log('No valid statements found for admin, moving to next player');
-                return;
-            }
-        } else {
-            const player = this.players.get(currentPlayerId);
-
-            if (!player || !player.statements || !player.statements.truths) {
-                console.log(`No valid statements found for player ${currentPlayerId}, moving to next player`);
-                return;
-            }
-
-            statements = player.statements;
-            playerName = player.name;
-        }
-
-        const shuffledStatements = this.preparePlayerStatementsForGuessing(statements);
-
-        this.startCountdown(this.answerTime, 'perGuess');
-
-        const teamId = currentPlayerId === 'admin' ? this.adminTeamId : this.players.get(currentPlayerId).teamId;
-        const teamName = teamId > 0 ? this.teamNames.get(teamId) : null;
-
-        const currentPlayerInfo = {
-            playerId: currentPlayerId,
-            name: playerName,
-            teamId: teamId,
-            teamName: teamName,
-            statements: shuffledStatements
-        };
-
-        this.broadcast({
-            type: 'current_player_statements',
-            currentPlayer: currentPlayerInfo,
-            answerTime: this.answerTime,
-            currentPlayerIndex: this.currentPlayerIndex,
-            totalPlayers: this.playerOrder.length,
-            countdown: this.getCountdownInfo(),
-            questionType: this.currentQuestionType 
-        });
-
-        this.broadcastGameState();
-
-        this.scheduleCountdownCompletion(this.answerTime, () => {
-            this.moveToNextPlayer();
-        });
-
-        console.log(`Started guessing round for player ${playerName} (${currentPlayerId}) with ${this.answerTime}s timer`);
-    }
-
-    preparePlayerStatementsForGuessing(statementsObj) {
         let statements = [];
 
-        for (let i = 0; i < statementsObj.truths.length; i++) {
+        for (let i = 0; i < currentSet.truths.length; i++) {
             statements.push({
-                originalIndex: statements.length, 
-                text: statementsObj.truths[i],
-                isLie: false 
+                originalIndex: statements.length,
+                text: currentSet.truths[i],
+                isLie: false
             });
         }
 
-        if (statementsObj.lie) {
-            statements.push({
-                originalIndex: statements.length, 
-                text: statementsObj.lie,
-                isLie: true 
-            });
-        }
+        statements.push({
+            originalIndex: statements.length,
+            text: currentSet.lie,
+            isLie: true
+        });
 
         statements = this.shuffleArray(statements);
+
+        this.currentStatements = statements;
 
         for (let i = 0; i < statements.length; i++) {
             if (statements[i].isLie) {
@@ -1504,28 +1444,131 @@ class Game {
             }
         }
 
-        console.log(`After shuffling, lie is at position ${this.currentLieShuffledIndex}`);
+        this.startCountdown(this.answerTime, 'perGuess');
+
+        const teamId = currentSet.teamId;
+        const teamName = teamId > 0 ? this.teamNames.get(teamId) : null;
+
+        const currentPlayerInfo = {
+            playerId: this.currentGuessingPlayerId,
+            name: currentSet.playerName,
+            teamId: teamId,
+            teamName: teamName,
+            round: currentSet.round,
+            statements: statements
+        };
+
+        this.broadcast({
+            type: 'current_player_statements',
+            currentPlayer: currentPlayerInfo,
+            answerTime: this.answerTime,
+            currentPlayerIndex: this.currentSetIndex,
+            totalPlayers: this.allStatementSets.length,
+            countdown: this.getCountdownInfo(),
+            questionType: this.currentQuestionType
+        });
+
+        this.broadcastGameState();
+
+        this.scheduleCountdownCompletion(this.answerTime, () => {
+            this.moveToNextPlayer();
+        });
+
+        if (config.logsenabled) console.log(`Started guessing round for player ${currentSet.playerName} (${this.currentGuessingPlayerId}) with ${this.answerTime}s timer`);
+    }
+
+    preparePlayerStatementsForGuessing(statementsObj) {
+        if (statementsObj.statementSets && Array.isArray(statementsObj.statementSets)) {
+            const currentRoundSet = statementsObj.statementSets.find(set => set.round === this.currentRound);
+
+            const setToUse = currentRoundSet || statementsObj.statementSets[0];
+
+            if (!setToUse) {
+                if (config.logsenabled) console.log('No statement set found for guessing');
+                return [];
+            }
+
+            let statements = [];
+
+            for (let i = 0; i < setToUse.truths.length; i++) {
+                statements.push({
+                    originalIndex: statements.length,
+                    text: setToUse.truths[i],
+                    isLie: false
+                });
+            }
+
+            statements.push({
+                originalIndex: statements.length,
+                text: setToUse.lie,
+                isLie: true
+            });
+
+            statements = this.shuffleArray(statements);
+
+            for (let i = 0; i < statements.length; i++) {
+                if (statements[i].isLie) {
+                    this.currentLieShuffledIndex = i;
+                    break;
+                }
+            }
+
+            if (config.logsenabled) console.log(`Prepared ${statements.length} statements for round ${this.currentRound}`);
+
+            return statements;
+        }
+        else if (statementsObj.truths && Array.isArray(statementsObj.truths)) {
+            let statements = [];
+
+            for (let i = 0; i < statementsObj.truths.length; i++) {
+                statements.push({
+                    originalIndex: statements.length,
+                    text: statementsObj.truths[i],
+                    isLie: false
+                });
+            }
+
+            if (statementsObj.lie) {
+                statements.push({
+                    originalIndex: statements.length,
+                    text: statementsObj.lie,
+                    isLie: true
+                });
+            }
+
+            statements = this.shuffleArray(statements);
+
+            for (let i = 0; i < statements.length; i++) {
+                if (statements[i].isLie) {
+                    this.currentLieShuffledIndex = i;
+                    break;
+                }
+            }
+
+            return statements;
+        }
+
+        return [];
+
+        if (config.logsenabled) console.log(`After shuffling, lie is at position ${this.currentLieShuffledIndex}`);
 
         return statements.map((s, index) => ({
-            index: index, 
+            index: index,
             text: s.text
         }));
     }
 
     moveToNextPlayer() {
-        this.currentPlayerIndex++;
+        const usedSets = this.allStatementSets.filter(set => set.used).length;
+        this.currentRound = usedSets + 1;
 
-        this.currentRound = this.currentPlayerIndex + 1;
-
-        if (this.currentPlayerIndex >= this.playerOrder.length) {
-            console.log('All players have been guessed, moving to results');
-
+        if (usedSets >= this.allStatementSets.length) {
+            if (config.logsenabled) console.log('All statement sets have been used, moving to results');
             this.endGuessingPhase();
             return;
         }
 
-        console.log(`Moving to round ${this.currentRound} (player ${this.currentPlayerIndex+1} of ${this.playerOrder.length})`);
-
+        if (config.logsenabled) console.log(`Moving to round ${this.currentRound} of ${this.allStatementSets.length} total sets`);
 
         setTimeout(() => {
             this.startGuessingRound();
@@ -1535,15 +1578,15 @@ class Game {
     endGuessingPhase() {
         this.gamePhase = 'results';
         this.inCountdown = false;
-        this.gameStarted = false; 
+        this.gameStarted = false;
 
         this.calculateFinalScores();
 
-        console.log('Final scores:', JSON.stringify(Object.fromEntries(this.scores)));
+        if (config.logsenabled) console.log('Final scores:', JSON.stringify(Object.fromEntries(this.scores)));
 
         this.broadcastGameState();
 
-        console.log('Guessing phase ended, transitioned to results');
+        if (config.logsenabled) console.log('Guessing phase ended, transitioned to results');
     }
 
     shuffleArray(array) {
@@ -1556,9 +1599,10 @@ class Game {
     }
 
     calculateFinalScores() {
-        console.log('Calculating final scores');
+        if (config.logsenabled) console.log('Calculating final scores');
 
         this.scores.clear();
+
 
         if (this.teamMode !== 'allVsAll') {
             this.teams.forEach((players, teamId) => {
@@ -1566,16 +1610,8 @@ class Game {
 
                 players.forEach(playerId => {
                     const player = this.players.get(playerId);
-                    if (player && player.guesses) {
-                        Object.entries(player.guesses).forEach(([targetId, guessIndex]) => {
-                            const targetPlayer = this.players.get(targetId);
-                            if (targetPlayer && targetPlayer.statements) {
-                                const isCorrect = guessIndex === this.findLieIndex(targetPlayer.statements);
-                                if (isCorrect) {
-                                    teamScore += 1;
-                                }
-                            }
-                        });
+                    if (player && player.score) {
+                        teamScore += player.score;
                     }
                 });
 
@@ -1583,28 +1619,22 @@ class Game {
             });
         } else {
             this.players.forEach((player, playerId) => {
-                let playerScore = 0;
-
-                if (player.guesses) {
-                    Object.entries(player.guesses).forEach(([targetId, guessIndex]) => {
-                        const targetPlayer = this.players.get(targetId);
-                        if (targetPlayer && targetPlayer.statements) {
-                            const isCorrect = guessIndex === this.findLieIndex(targetPlayer.statements);
-                            if (isCorrect) {
-                                playerScore += 1;
-                            }
-                        }
-                    });
-                }
-
-                this.scores.set(playerId, playerScore);
+                this.scores.set(playerId, player.score || 0);
             });
+
+            if (this.adminScore !== undefined) {
+                this.scores.set('admin', this.adminScore);
+            }
         }
 
-        console.log('Final scores:', Object.fromEntries(this.scores));
+        if (config.logsenabled) console.log('Final scores:', Object.fromEntries(this.scores));
     }
 
     findLieIndex(statements) {
+        if (Array.isArray(statements)) {
+            return statements.findIndex(s => s.isLie === true);
+        }
+
         if (!statements || !statements.lie) return -1;
 
         const allStatements = [];
@@ -1643,7 +1673,7 @@ class Game {
                 });
                 res.on('end', () => {
                     if (res.statusCode === 201) {
-                        console.log('Successfully sent game log to TeamPlay API');
+                        if (config.logsenabled) console.log('Successfully sent game log to TeamPlay API');
                     } else {
                         console.error('Failed to send game log to TeamPlay API:', res.statusCode, data);
                     }
@@ -1660,7 +1690,7 @@ class Game {
             }));
             req.end();
         } else {
-            console.log('TeamPlay API logging is disabled');
+            if (config.logsenabled) console.log('TeamPlay API logging is disabled');
         }
 
         this.gameEvents = [];
@@ -1670,7 +1700,7 @@ class Game {
 }
 
 wss.on('connection', (ws) => {
-    console.log('New connection established');
+    if (config.logsenabled) console.log('New connection established');
 
     ws.isAlive = true;
     ws.on('pong', () => {
@@ -1705,7 +1735,7 @@ wss.on('connection', (ws) => {
                         if (game) {
                             const adminName = data.type === 'admin_name_update' ? data.name : data.adminName;
                             game.setAdminInfo(adminName);
-                            console.log(`Admin name updated to: ${adminName}`);
+                            if (config.logsenabled) console.log(`Admin name updated to: ${adminName}`);
                         }
                     }
                     break;
@@ -1714,10 +1744,10 @@ wss.on('connection', (ws) => {
                     if (clientInfo && clientInfo.type === 'admin') {
                         const game = activeGames.get(clientInfo.gameCode);
                         if (game) {
-                            console.log(`Admin team update received: ${data.teamId}`);
+                            if (config.logsenabled) console.log(`Admin team update received: ${data.teamId}`);
                             game.adminTeamId = data.teamId;
                             game.broadcastGameState();
-                            console.log(`Admin team updated to: ${data.teamId}`);
+                            if (config.logsenabled) console.log(`Admin team updated to: ${data.teamId}`);
                         }
                     }
                     break;
@@ -1767,12 +1797,46 @@ wss.on('connection', (ws) => {
                     }
                     break;
 
+                case 'update_team_name':
+                    if (clientInfo && clientInfo.type === 'admin') {
+                        const game = activeGames.get(clientInfo.gameCode);
+                        if (game) {
+                            const result = game.updateTeamName(data.teamId, data.newName);
+                            if (!result.success) {
+                                ws.send(JSON.stringify({
+                                    type: 'error',
+                                    message: result.error
+                                }));
+                            }
+                        }
+                    }
+                    break;
+
+                case 'update_game_settings':
+                    if (clientInfo && clientInfo.type === 'admin') {
+                        const game = activeGames.get(clientInfo.gameCode);
+                        if (game) {
+                            if (data.answerTime !== undefined) {
+                                game.answerTime = parseInt(data.answerTime) || config.defaultAnswerTime;
+                                if (config.logsenabled) console.log(`Updated answer time to: ${game.answerTime}`);
+                            }
+
+                            if (data.roundsCount !== undefined) {
+                                game.roundsCount = parseInt(data.roundsCount) || 1;
+                                if (config.logsenabled) console.log(`Updated rounds count to: ${game.roundsCount}`);
+                            }
+
+                            game.broadcastGameState();
+                        }
+                    }
+                    break;
+
                 case 'submit_statements':
                     if (clientInfo && (clientInfo.type === 'player' || clientInfo.type === 'admin')) {
                         const game = activeGames.get(clientInfo.gameCode);
                         if (game) {
                             const playerId = clientInfo.type === 'admin' ? 'admin' : clientInfo.playerId;
-                            const result = game.submitStatements(playerId, data.statements);
+                            const result = game.submitStatements(playerId, data.statementSets);
 
                             if (!result.success) {
                                 ws.send(JSON.stringify({
@@ -1831,7 +1895,7 @@ wss.on('connection', (ws) => {
                         }));
                     }
 
-                    console.log('Sending example statements');
+                    if (config.logsenabled) console.log('Sending example statements');
                     ws.send(JSON.stringify({
                         type: 'example_statements',
                         examples: config.exampleStatements
@@ -1842,7 +1906,7 @@ wss.on('connection', (ws) => {
                             ? await validateApiCode(data.apiCode)
                             : { valid: true };
                         if (!validation.valid) {
-                            console.log('API validation failed:', validation.error);
+                            if (config.logsenabled) console.log('API validation failed:', validation.error);
                             existingGame.apiValidated = false;
                             existingGame.apiCode = null;
                             ws.send(JSON.stringify({
@@ -1898,7 +1962,7 @@ wss.on('connection', (ws) => {
                     break;
 
                 case 'join_session':
-                    console.log(data);
+                    if (config.logsenabled) console.log(data);
                     const targetGame = activeGames.get(data.sessionId);
                     if (targetGame) {
                         if (!targetGame.apiValidated) {
@@ -1910,13 +1974,13 @@ wss.on('connection', (ws) => {
                             return;
                         }
 
-                        console.log('Join session data received:', data);
+                        if (config.logsenabled) console.log('Join session data received:', data);
                         if (data.playerId) {
-                            console.log('Reconnection attempt with playerId:', data.playerId);
-                            console.log('Current players in game:', Array.from(targetGame.players.keys()));
+                            if (config.logsenabled) console.log('Reconnection attempt with playerId:', data.playerId);
+                            if (config.logsenabled) console.log('Current players in game:', Array.from(targetGame.players.keys()));
                             const existingPlayer = targetGame.players.get(data.playerId);
                             if (existingPlayer) {
-                                console.log('Found existing player:', {
+                                if (config.logsenabled) console.log('Found existing player:', {
                                     playerId: data.playerId,
                                     name: existingPlayer.name,
                                     color: existingPlayer.color
@@ -1947,10 +2011,10 @@ wss.on('connection', (ws) => {
                                     }));
                                 }
 
-                                console.log('Player reconnected successfully');
+                                if (config.logsenabled) console.log('Player reconnected successfully');
                             } else {
-                                console.log('Player ID not found in game players:', data.playerId);
-                                console.log('Attempting to use provided ID for new player');
+                                if (config.logsenabled) console.log('Player ID not found in game players:', data.playerId);
+                                if (config.logsenabled) console.log('Attempting to use provided ID for new player');
                                 const success = targetGame.addPlayer(ws, data.name, data.playerId, data.color);
                                 if (!success) {
                                     ws.send(JSON.stringify({
@@ -1960,7 +2024,7 @@ wss.on('connection', (ws) => {
                                 }
                             }
                         } else {
-                            console.log('New player connection (no playerId provided)');
+                            if (config.logsenabled) console.log('New player connection (no playerId provided)');
                             const success = targetGame.addPlayer(ws, data.name);
                             if (!success) {
                                 ws.send(JSON.stringify({
@@ -1982,16 +2046,17 @@ wss.on('connection', (ws) => {
                     if (clientInfo && clientInfo.type === 'admin') {
                         const game = activeGames.get(clientInfo.gameCode);
                         if (game) {
-                            if (data.adminStatements) {
-                                game.submitStatements('admin', data.adminStatements);
+                            if (data.statementSets) {
+                                game.submitStatements('admin', data.statementSets);
                             }
 
                             const settings = {
                                 answerTime: data.answerTime,
-                                roundsCount: data.roundsCount
+                                roundsCount: data.roundsCount,
+                                countdownSeconds: data.countdownSeconds
                             };
+
                             const result = game.startGame(settings);
-                            console.log(result, 123);
 
                             if (!result.success) {
                                 ws.send(JSON.stringify({
@@ -1999,10 +2064,10 @@ wss.on('connection', (ws) => {
                                     message: result.error
                                 }));
                             } else {
+                                game.gatherStatementSets();
+
                                 const countdownSeconds = data.countdownSeconds || 5;
-
                                 const answerTime = data.answerTime || 10;
-
                                 const countdownInfo = game.startCountdown(countdownSeconds, 'gameStart');
 
                                 game.broadcast({
@@ -2024,7 +2089,7 @@ wss.on('connection', (ws) => {
 
                                     game.broadcastGameState();
 
-                                    console.log(`Transitioned to guessing phase after ${countdownSeconds}s countdown`);
+                                    if (config.logsenabled) console.log(`Transitioned to guessing phase after ${countdownSeconds}s countdown`);
                                 });
                             }
                         }
@@ -2047,7 +2112,7 @@ wss.on('connection', (ws) => {
 
                             game.endGuessingPhase();
 
-                            console.log('Game finished early by admin');
+                            if (config.logsenabled) console.log('Game finished early by admin');
                         }
                     }
                     break;
@@ -2132,7 +2197,7 @@ wss.on('connection', (ws) => {
                                 message: 'The game has been reset by the admin. Ready to start a new game.'
                             });
 
-                            console.log(`Game ${clientInfo.gameCode} has been reset by admin`);
+                            if (config.logsenabled) console.log(`Game ${clientInfo.gameCode} has been reset by admin`);
                         }
                     }
                     break;
@@ -2174,7 +2239,7 @@ function handleDisconnect(ws) {
                     name: 'Admin'
                 });
             } else {
-                console.log('Player disconnected:', clientInfo.playerId);
+                if (config.logsenabled) console.log('Player disconnected:', clientInfo.playerId);
                 game.removePlayer(clientInfo.playerId);
             }
         }

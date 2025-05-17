@@ -46,14 +46,15 @@ class GameAdmin {
         this.players = new Map();
         this.teams = [];
         this.teamMode = 'allVsAll';
-        this.answerTime = 10;
-        this.roundsCount = 5;
+        this.answerTime = parseInt(localStorage.getItem('truths_and_lies_answer_time')) || 30;
+        this.roundsCount = parseInt(localStorage.getItem('truths_and_lies_rounds_count')) || 3;
+        this.waitTime = parseInt(localStorage.getItem('truths_and_lies_wait_time')) || 30;
         this.currentRound = 0;
 
         this.alwaysShowWaitTimePopup = true;
         this.timerInterval = null;
         this.countdownInterval = null;
-        this.countdownSeconds = 5; 
+        this.countdownSeconds = 5;
         this.statements = [];
         this.readyPlayers = new Set();
         this.gamePhase = 'setup';
@@ -173,8 +174,8 @@ class GameAdmin {
         const port = window.location.port || '80';
         const isLocalDevelopment = port === '777';
         const protocol = isLocalDevelopment ? "ws:" : "wss:";
-        const host = isLocalDevelopment ? "127.0.0.1" : port === '3081' ? 'deploy.ylo.one' : 'gs.team-play.online/one-lie-two-truths-server';
-        const wsPort = isLocalDevelopment ? '8083' : port === '3081' ? '3091' : undefined;
+        const host = isLocalDevelopment ? "127.0.0.1" : port === '3082' ? 'deploy.ylo.one' : 'gs.team-play.online/truth-and-lies-server';
+        const wsPort = isLocalDevelopment ? '8083' : port === '3082' ? '3092' : undefined;
 
         const wsUrl = wsPort ? `${protocol}//${host}:${wsPort}` : `${protocol}//${host}`;
         DEBUG.log('Connecting to server at:', wsUrl);
@@ -187,7 +188,7 @@ class GameAdmin {
             this.reconnectAttempts = 0;
             this.updateConnectionStatus('Connected', true);
 
-            const gameCode = localStorage.getItem('one_lie_two_truthsadmin_game_code') || null;
+            const gameCode = localStorage.getItem('truth_and_lies_admin_game_code') || null;
 
             this.ws.send(JSON.stringify({
                 type: 'create_session',
@@ -203,6 +204,13 @@ class GameAdmin {
                 }));
                 this.shouldSendAdminName = false;
             }
+
+            DEBUG.log('Sending game settings after connection established');
+            this.ws.send(JSON.stringify({
+                type: 'update_game_settings',
+                answerTime: this.answerTime,
+                roundsCount: this.roundsCount
+            }));
 
             const hasPlayers = this.players.size > 0;
             const startButton = document.getElementById('start-button');
@@ -244,7 +252,7 @@ class GameAdmin {
 
                     case 'session_created':
                         this.gameCode = data.sessionId;
-                        localStorage.setItem('one_lie_two_truthsadmin_game_code', this.gameCode);
+                        localStorage.setItem('truth_and_lies_admin_game_code', this.gameCode);
                         this.hideConnectionForm();
                         this.generateQRCode();
                         break;
@@ -258,8 +266,10 @@ class GameAdmin {
                         DEBUG.log('Received game state:', data);
 
                         if (data.scores) {
-                            console.log('Storing score data:', data.scores);
+                            DEBUG.log('Storing score data:', data.scores);
                             this.scores = data.scores;
+
+                            this.updateCurrentAdminScore(data.scores);
 
                             if (data.teamMode) {
                                 this.teamMode = data.teamMode;
@@ -296,9 +306,9 @@ class GameAdmin {
                                     if (data.currentGuessingPlayer) {
                                         const playerWithQuestionType = {
                                             ...data.currentGuessingPlayer,
-                                            questionType: data.questionType 
+                                            questionType: data.questionType
                                         };
-                                        this.displayGuessingInterface(playerWithQuestionType);
+                                        this.displayGuessingInterface(playerWithQuestionType, data.myGuesses);
                                     }
                                 } else if (this.gamePhase === 'results') {
                                     leftColumn.classList.add('results-phase');
@@ -341,7 +351,7 @@ class GameAdmin {
                             this.adminName = data.adminName;
                         }
 
-                        if (data.answerTime) {
+                        if (data.answerTime && !localStorage.getItem('truths_and_lies_answer_time')) {
                             this.answerTime = data.answerTime;
                             const answerTimeInput = document.getElementById('answerTime');
                             if (answerTimeInput) {
@@ -349,7 +359,7 @@ class GameAdmin {
                             }
                         }
 
-                        if (data.roundsCount) {
+                        if (data.roundsCount && !localStorage.getItem('truths_and_lies_rounds_count')) {
                             this.roundsCount = data.roundsCount;
                             const roundsCountInput = document.getElementById('roundsCount');
                             if (roundsCountInput) {
@@ -436,6 +446,11 @@ class GameAdmin {
                         if (this.gameSessionStarted && this.gamePhase === 'guessing') {
                             DEBUG.log('Processing player guess:', data);
 
+                            if (data.scores) {
+                                this.scores = data.scores;
+                                this.updateCurrentAdminScore(data.scores);
+                            }
+
                             const guessingPlayer = this.players.get(data.guessingPlayerId);
                             const targetPlayer = this.players.get(data.targetPlayerId);
 
@@ -509,7 +524,7 @@ class GameAdmin {
                         break;
                 }
             } catch (error) {
-                console.error('Error processing message:', error);
+                DEBUG.log('Error processing message:', error);
             }
         };
 
@@ -539,7 +554,7 @@ class GameAdmin {
         };
 
         this.ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
+            DEBUG.log('WebSocket error:', error);
             this.isConnected = false;
             this.updateConnectionStatus('Connection error, attempting to reconnect...', false);
         };
@@ -650,25 +665,54 @@ class GameAdmin {
     setupNumberInputValidation(inputElement) {
         if (!inputElement) return;
 
-        const minValue = parseInt(inputElement.getAttribute('min'), 10) || 1;
-        const maxValue = parseInt(inputElement.getAttribute('max'), 10) || 100;
-        let currentValue = parseInt(inputElement.value, 10);
+        const minValue = parseInt(inputElement.getAttribute('min') || inputElement.getAttribute('data-min'), 10) || 1;
+        const maxValue = parseInt(inputElement.getAttribute('max') || inputElement.getAttribute('data-max'), 10) || 100;
 
-        if (currentValue > maxValue) {
-            inputElement.value = maxValue;
-        } else if (currentValue < minValue || isNaN(currentValue)) {
+        let currentValue = parseInt(inputElement.value, 10);
+        if (isNaN(currentValue) || currentValue < minValue) {
             inputElement.value = minValue;
+        } else if (currentValue > maxValue) {
+            inputElement.value = maxValue;
         }
 
-        inputElement.addEventListener('input', () => {
-            const min = parseInt(inputElement.getAttribute('min'), 10) || 1;
-            const max = parseInt(inputElement.getAttribute('max'), 10) || 100;
-            let value = parseInt(inputElement.value, 10);
+        inputElement.addEventListener('blur', () => {
+            const min = parseInt(inputElement.getAttribute('min') || inputElement.getAttribute('data-min'), 10) || 1;
+            const max = parseInt(inputElement.getAttribute('max') || inputElement.getAttribute('data-max'), 10) || 100;
 
-            if (value > max) {
-                inputElement.value = max;
-            } else if (value < min || isNaN(value)) {
+            let value = parseInt(inputElement.value.replace(/[^0-9]/g, ''), 10);
+
+            if (isNaN(value) || value < min) {
                 inputElement.value = min;
+            } else if (value > max) {
+                inputElement.value = max;
+            } else {
+                inputElement.value = value; 
+            }
+
+            inputElement.dispatchEvent(new Event('change'));
+        });
+
+        inputElement.addEventListener('input', () => {
+            if (!/^\d*$/.test(inputElement.value)) {
+                inputElement.value = inputElement.value.replace(/[^0-9]/g, '');
+            }
+        });
+
+        inputElement.addEventListener('keydown', (e) => {
+            const min = parseInt(inputElement.getAttribute('min') || inputElement.getAttribute('data-min'), 10) || 1;
+            const max = parseInt(inputElement.getAttribute('max') || inputElement.getAttribute('data-max'), 10) || 100;
+            let currentValue = parseInt(inputElement.value, 10) || 0;
+
+            if (e.key === 'ArrowUp') {
+                const newValue = Math.min(currentValue + 1, max);
+                inputElement.value = newValue;
+                e.preventDefault(); 
+                inputElement.dispatchEvent(new Event('change'));
+            } else if (e.key === 'ArrowDown') {
+                const newValue = Math.max(currentValue - 1, min);
+                inputElement.value = newValue;
+                e.preventDefault(); 
+                inputElement.dispatchEvent(new Event('change'));
             }
         });
     }
@@ -700,6 +744,14 @@ class GameAdmin {
             answerTimeInput.value = this.answerTime;
             answerTimeInput.addEventListener('change', (e) => {
                 this.answerTime = parseInt(e.target.value) || 10;
+                localStorage.setItem('truths_and_lies_answer_time', this.answerTime);
+
+                if (this.ws && this.isConnected) {
+                    this.ws.send(JSON.stringify({
+                        type: 'update_game_settings',
+                        answerTime: this.answerTime
+                    }));
+                }
             });
 
             this.setupNumberInputValidation(answerTimeInput);
@@ -709,15 +761,141 @@ class GameAdmin {
         if (roundsCountInput) {
             roundsCountInput.value = this.roundsCount;
             roundsCountInput.addEventListener('change', (e) => {
-                this.roundsCount = parseInt(e.target.value) || 5;
+                this.roundsCount = parseInt(e.target.value) || 1;
+                localStorage.setItem('truths_and_lies_rounds_count', this.roundsCount);
+
+                this.generateStatementInputs();
+
+                if (this.ws && this.isConnected) {
+                    this.ws.send(JSON.stringify({
+                        type: 'update_game_settings',
+                        roundsCount: this.roundsCount
+                    }));
+                }
             });
 
             this.setupNumberInputValidation(roundsCountInput);
         }
 
+        this.generateStatementInputs();
+
         if (this.gameCode) {
             this.updateQRCode();
         }
+    }
+
+    generateStatementInputs() {
+        const container = document.getElementById('dynamicStatementInputs');
+        if (!container) return;
+
+        const existingValues = {};
+        for (let i = 1; i <= 5; i++) { 
+            const truthId1 = `adminTruth1_${i}`;
+            const truthId2 = `adminTruth2_${i}`;
+            const lieId = `adminLie_${i}`;
+
+            const truthEl1 = document.getElementById(truthId1);
+            const truthEl2 = document.getElementById(truthId2);
+            const lieEl = document.getElementById(lieId);
+
+            if (truthEl1) existingValues[truthId1] = truthEl1.value;
+            if (truthEl2) existingValues[truthId2] = truthEl2.value;
+            if (lieEl) existingValues[lieId] = lieEl.value;
+        }
+
+        const oldTruth1 = document.getElementById('adminTruth1');
+        const oldTruth2 = document.getElementById('adminTruth2');
+        const oldLie = document.getElementById('adminLie');
+
+        if (oldTruth1 && !existingValues['adminTruth1_1']) existingValues['adminTruth1_1'] = oldTruth1.value;
+        if (oldTruth2 && !existingValues['adminTruth2_1']) existingValues['adminTruth2_1'] = oldTruth2.value;
+        if (oldLie && !existingValues['adminLie_1']) existingValues['adminLie_1'] = oldLie.value;
+
+        container.innerHTML = '';
+
+        for (let i = 1; i <= this.roundsCount; i++) {
+            if (this.roundsCount > 1) {
+                const titleContainer = document.createElement('div');
+                titleContainer.className = 'round-title-container';
+
+                const setTitle = document.createElement('h4');
+                setTitle.className = 'set-title';
+                setTitle.textContent = `Round ${i}`;
+                titleContainer.appendChild(setTitle);
+
+                container.appendChild(titleContainer);
+            }
+
+            const setContainer = document.createElement('div');
+            setContainer.className = 'statement-set';
+
+            const truthDiv1 = document.createElement('div');
+            truthDiv1.className = 'statement-input statement-input-truth';
+
+            const truthLabel1 = document.createElement('label');
+            const truthId1 = `adminTruth1_${i}`;
+            truthLabel1.setAttribute('for', truthId1);
+            truthLabel1.textContent = 'First truth';
+
+            const truthTextarea1 = document.createElement('textarea');
+            truthTextarea1.id = truthId1;
+            truthTextarea1.value = existingValues[truthId1] || '';
+
+            truthTextarea1.addEventListener('input', () => {
+                this.validateGameCanStart();
+                this.saveDynamicStatementsToStorage();
+            });
+
+            truthDiv1.appendChild(truthLabel1);
+            truthDiv1.appendChild(truthTextarea1);
+            setContainer.appendChild(truthDiv1);
+
+            const truthDiv2 = document.createElement('div');
+            truthDiv2.className = 'statement-input statement-input-truth';
+
+            const truthLabel2 = document.createElement('label');
+            const truthId2 = `adminTruth2_${i}`;
+            truthLabel2.setAttribute('for', truthId2);
+            truthLabel2.textContent = 'Second truth';
+
+            const truthTextarea2 = document.createElement('textarea');
+            truthTextarea2.id = truthId2;
+            truthTextarea2.value = existingValues[truthId2] || '';
+
+            truthTextarea2.addEventListener('input', () => {
+                this.validateGameCanStart();
+                this.saveDynamicStatementsToStorage();
+            });
+
+            truthDiv2.appendChild(truthLabel2);
+            truthDiv2.appendChild(truthTextarea2);
+            setContainer.appendChild(truthDiv2);
+
+            const lieDiv = document.createElement('div');
+            lieDiv.className = 'statement-input statement-input-lie';
+
+            const lieLabel = document.createElement('label');
+            const lieId = `adminLie_${i}`;
+            lieLabel.setAttribute('for', lieId);
+            lieLabel.textContent = 'One lie';
+
+            const lieTextarea = document.createElement('textarea');
+            lieTextarea.id = lieId;
+            lieTextarea.value = existingValues[lieId] || '';
+
+            lieTextarea.addEventListener('input', () => {
+                this.validateGameCanStart();
+                this.saveDynamicStatementsToStorage();
+            });
+
+            lieDiv.appendChild(lieLabel);
+            lieDiv.appendChild(lieTextarea);
+            setContainer.appendChild(lieDiv);
+
+            container.appendChild(setContainer);
+        }
+
+        this.loadDynamicStatementsFromStorage();
     }
 
     updateAdminTeamBadge(teamId, teamName, teamMode) {
@@ -796,70 +974,79 @@ class GameAdmin {
         this.validateGameCanStart();
     }
 
-    saveAdminStatementsToStorage() {
-        const adminTruth1 = document.getElementById('adminTruth1');
-        const adminTruth2 = document.getElementById('adminTruth2');
-        const adminLie = document.getElementById('adminLie');
-
-        if (!adminTruth1 || !adminTruth2 || !adminLie) return;
-
+    saveDynamicStatementsToStorage() {
         try {
-            const adminStatements = {
-                truth1: adminTruth1.value,
-                truth2: adminTruth2.value,
-                lie: adminLie.value,
-                lastUpdated: new Date().toISOString()
-            };
+            const statements = {};
 
-            localStorage.setItem('truths_and_lies_admin_statements', JSON.stringify(adminStatements));
-            DEBUG.log('Admin statements saved to localStorage');
-        } catch (error) {
-            DEBUG.log('Error saving admin statements to localStorage:', error);
-        }
-    }
+            for (let i = 1; i <= this.roundsCount; i++) {
+                const truth1 = document.getElementById(`adminTruth1_${i}`);
+                const truth2 = document.getElementById(`adminTruth2_${i}`);
+                const lie = document.getElementById(`adminLie_${i}`);
 
-    loadAdminStatementsFromStorage() {
-        const adminTruth1 = document.getElementById('adminTruth1');
-        const adminTruth2 = document.getElementById('adminTruth2');
-        const adminLie = document.getElementById('adminLie');
-
-        if (!adminTruth1 || !adminTruth2 || !adminLie) return;
-
-        try {
-            const savedData = localStorage.getItem('truths_and_lies_admin_statements');
-
-            if (savedData) {
-                const adminStatements = JSON.parse(savedData);
-
-                adminTruth1.value = adminStatements.truth1 || '';
-                adminTruth2.value = adminStatements.truth2 || '';
-                adminLie.value = adminStatements.lie || '';
-
-                DEBUG.log('Admin statements loaded from localStorage');
-
-                this.validateAdminExamples();
+                if (truth1 && truth2 && lie) {
+                    statements[`set_${i}`] = {
+                        truth1: truth1.value,
+                        truth2: truth2.value,
+                        lie: lie.value
+                    };
+                }
             }
+
+            localStorage.setItem('truths_and_lies_admin_dynamic_statements', JSON.stringify(statements));
+            DEBUG.log('Dynamic statements saved to localStorage');
+
         } catch (error) {
-            DEBUG.log('Error loading admin statements from localStorage:', error);
+            DEBUG.log('Error saving dynamic statements to localStorage:', error);
         }
     }
 
-    clearAdminStatementsFromStorage() {
+    loadDynamicStatementsFromStorage() {
         try {
-            localStorage.removeItem('truths_and_lies_admin_statements');
-            DEBUG.log('Admin statements cleared from localStorage');
+            const savedData = localStorage.getItem('truths_and_lies_admin_dynamic_statements');
+            if (!savedData) return;
 
-            const adminTruth1 = document.getElementById('adminTruth1');
-            const adminTruth2 = document.getElementById('adminTruth2');
-            const adminLie = document.getElementById('adminLie');
+            const savedStatements = JSON.parse(savedData);
 
-            if (adminTruth1) adminTruth1.value = '';
-            if (adminTruth2) adminTruth2.value = '';
-            if (adminLie) adminLie.value = '';
+            Object.keys(savedStatements).forEach(setKey => {
+                const set = savedStatements[setKey];
+                const setNumber = parseInt(setKey.replace('set_', ''));
 
-            this.validateAdminExamples();
+                if (setNumber && !isNaN(setNumber) && setNumber <= this.roundsCount) {
+                    const truth1 = document.getElementById(`adminTruth1_${setNumber}`);
+                    const truth2 = document.getElementById(`adminTruth2_${setNumber}`);
+                    const lie = document.getElementById(`adminLie_${setNumber}`);
+
+                    if (truth1) truth1.value = set.truth1 || '';
+                    if (truth2) truth2.value = set.truth2 || '';
+                    if (lie) lie.value = set.lie || '';
+                }
+            });
+
+            DEBUG.log('Dynamic statements loaded from localStorage');
         } catch (error) {
-            DEBUG.log('Error clearing admin statements from localStorage:', error);
+            DEBUG.log('Error loading dynamic statements from storage:', error);
+        }
+    }
+
+    clearDynamicStatementsFromStorage() {
+        return;
+        try {
+            localStorage.removeItem('truths_and_lies_admin_dynamic_statements');
+            DEBUG.log('Dynamic statements cleared from localStorage');
+
+            for (let i = 1; i <= this.roundsCount; i++) {
+                const truth1 = document.getElementById(`adminTruth1_${i}`);
+                const truth2 = document.getElementById(`adminTruth2_${i}`);
+                const lie = document.getElementById(`adminLie_${i}`);
+
+                if (truth1) truth1.value = '';
+                if (truth2) truth2.value = '';
+                if (lie) lie.value = '';
+            }
+
+            this.validateGameCanStart();
+        } catch (error) {
+            DEBUG.log('Error clearing dynamic statements from localStorage:', error);
         }
     }
 
@@ -879,11 +1066,17 @@ class GameAdmin {
             const closeWaitTimePopupBtn = document.getElementById('closeWaitTimePopup');
             const waitTimeInput = document.getElementById('waitTimeInput');
 
+            waitTimeInput.value = this.waitTime;
+
             const pendingPlayers = totalPlayers - readyPlayers;
-            const waitMessage = `How long would you like to wait?`;
-            waitTimePopup.querySelector('p').textContent = waitMessage;
 
             waitTimePopup.classList.remove('hidden');
+
+            waitTimeInput.addEventListener('keydown', () => {
+                const newValue = parseInt(waitTimeInput.value) || 30;
+                this.waitTime = newValue;
+                localStorage.setItem('truths_and_lies_wait_time', newValue);
+            });
 
             this.setupNumberInputValidation(waitTimeInput);
 
@@ -944,21 +1137,33 @@ class GameAdmin {
 
     sendStartGameMessage() {
         if (this.ws && this.isConnected) {
-            const adminTruth1 = document.getElementById('adminTruth1').value.trim();
-            const adminTruth2 = document.getElementById('adminTruth2').value.trim();
-            const adminLie = document.getElementById('adminLie').value.trim();
             const countdownSeconds = this.countdownSeconds || 5;
+            const container = document.getElementById('dynamicStatementInputs');
+            const useDynamicInputs = container && container.children.length > 0;
+
+            const statementSets = [];
+
+            for (let i = 1; i <= this.roundsCount; i++) {
+                const truth1 = document.getElementById(`adminTruth1_${i}`);
+                const truth2 = document.getElementById(`adminTruth2_${i}`);
+                const lie = document.getElementById(`adminLie_${i}`);
+
+                if (truth1 && truth2 && lie) {
+                    statementSets.push({
+                        round: i,
+                        truths: [truth1.value.trim(), truth2.value.trim()],
+                        lie: lie.value.trim()
+                    });
+                }
+            }
 
             this.ws.send(JSON.stringify({
                 type: 'start_game',
                 teamMode: this.teamMode,
                 answerTime: this.answerTime,
                 roundsCount: this.roundsCount,
-                countdownSeconds: countdownSeconds,
-                adminStatements: {
-                    truths: [adminTruth1, adminTruth2],
-                    lie: adminLie
-                }
+                countdownSeconds: this.countdownSeconds,
+                statementSets: statementSets
             }));
         }
     }
@@ -1008,43 +1213,23 @@ class GameAdmin {
             timerElement.classList.remove('timer-state-green', 'timer-state-orange', 'timer-state-red');
 
             if (timeLeft === 2 && this.gamePhase === 'guessing') {
-                const submitButton = document.getElementById('submit-guess-button');
-                if (submitButton && !submitButton.classList.contains('inactive')) {
+                const targetPlayerId = this.currentGuessingPlayer.id || this.currentGuessingPlayer.playerId;
+                console.log('auto-check', targetPlayerId, this.currentGuessingPlayer);
+                const isOwnStatements = targetPlayerId === 'admin';
+                if (targetPlayerId && !isOwnStatements) {
+                    DEBUG.log('Auto-selecting and submitting random guess for admin');
+                    const availableOptions = document.querySelectorAll('input[name="guess"]');
+                    console.log('auto-check', availableOptions);
+                    if (availableOptions.length > 0) {
+                        const randomIndex = Math.floor(Math.random() * availableOptions.length);
+                        const randomOption = availableOptions[randomIndex];
 
-                    const targetPlayerId = this.currentGuessingPlayer.id || this.currentGuessingPlayer.playerId;
+                        randomOption.checked = true;
 
-                    const isOwnStatements = targetPlayerId === 'admin';
-                    if (targetPlayerId && !isOwnStatements) {
-                        const selectedRadio = document.querySelector('input[name="guess"]:checked');
-
-                        if (selectedRadio) {
-                            DEBUG.log('Auto-submitting admin\'s selected guess with 2 seconds remaining');
-
-                            submitButton.click();
-
-                            const radioLabel = selectedRadio.closest('label');
-                            if (radioLabel) {
-                                radioLabel.classList.add('auto-selected');
-                                radioLabel.setAttribute('data-auto-action', 'auto-submitted');
-                            }
-                        } else {
-                            DEBUG.log('Auto-selecting and submitting random guess for admin');
-                            const availableOptions = document.querySelectorAll('input[name="guess"]');
-
-                            if (availableOptions.length > 0) {
-                                const randomIndex = Math.floor(Math.random() * availableOptions.length);
-                                const randomOption = availableOptions[randomIndex];
-
-                                randomOption.checked = true;
-
-                                const radioLabel = randomOption.closest('label');
-                                if (radioLabel) {
-                                    radioLabel.classList.add('auto-selected');
-                                    radioLabel.setAttribute('data-auto-action', 'auto-selected');
-                                }
-
-                                submitButton.click();
-                            }
+                        const radioLabel = randomOption.closest('label');
+                        if (radioLabel) {
+                            radioLabel.classList.add('auto-selected');
+                            radioLabel.setAttribute('data-auto-action', 'auto-selected');
                         }
                     }
                 }
@@ -1128,15 +1313,44 @@ class GameAdmin {
         }
         if (startGameBtn) startGameBtn.classList.remove('inactive');
 
-        const adminTruth1 = document.getElementById('adminTruth1');
-        const adminTruth2 = document.getElementById('adminTruth2');
-        const adminLie = document.getElementById('adminLie');
+        let allFilled = true;
 
-        if (!adminTruth1 || !adminTruth2 || !adminLie) return false;
+        const container = document.getElementById('dynamicStatementInputs');
+        const useDynamicInputs = container && container.children.length > 0;
 
-        const allFilled = adminTruth1.value.trim() &&
-                          adminTruth2.value.trim() &&
-                          adminLie.value.trim();
+        if (useDynamicInputs) {
+            for (let i = 1; i <= this.roundsCount; i++) {
+                const truth1 = document.getElementById(`adminTruth1_${i}`);
+                const truth2 = document.getElementById(`adminTruth2_${i}`);
+                const lie = document.getElementById(`adminLie_${i}`);
+
+                if (!truth1 || !truth2 || !lie) {
+                    allFilled = false;
+                    break;
+                }
+
+                const setFilled = truth1.value.trim() &&
+                                 truth2.value.trim() &&
+                                 lie.value.trim();
+
+                if (!setFilled) {
+                    allFilled = false;
+                    break;
+                }
+            }
+        } else {
+            const adminTruth1 = document.getElementById('adminTruth1');
+            const adminTruth2 = document.getElementById('adminTruth2');
+            const adminLie = document.getElementById('adminLie');
+
+            if (!adminTruth1 || !adminTruth2 || !adminLie) {
+                return false;
+            }
+
+            allFilled = adminTruth1.value.trim() &&
+                        adminTruth2.value.trim() &&
+                        adminLie.value.trim();
+        }
 
         if (!allFilled) {
             const message = 'Waiting for admin';
@@ -1156,19 +1370,18 @@ class GameAdmin {
 
         const totalPlayers = this.players.size;
         const readyPlayers = Array.from(this.players.values()).filter(player => player.submittedStatements).length;
-        const totalResponders = readyPlayers + 1; 
+        const totalResponders = readyPlayers + 1;
 
-        if (totalPlayers + 1 < this.roundsCount) { 
-            if (readyPlayers < totalPlayers) {
-                const message = `Waiting for ${totalPlayers - readyPlayers} more player(s) to submit statements.`;
-                if (startGameMessage) startGameMessage.textContent = message;
-                if (startGameBtn) startGameBtn.classList.add('inactive');
-                this.broadcastGameStatusMessage(message, false);
-                return false;
-            }
+        if (readyPlayers < totalPlayers) {
+            const message = `Waiting for ${totalPlayers - readyPlayers} more player(s) to submit statements.`;
+            if (startGameMessage) startGameMessage.textContent = message;
+            if (startGameBtn) startGameBtn.classList.add('inactive');
+            this.broadcastGameStatusMessage(message, false);
+            return false;
         }
-        else if (totalResponders < this.roundsCount) {
-            const message = `Need ${this.roundsCount - totalResponders} more player(s) with statements.`;
+
+        if (totalPlayers < 1) { 
+            const message = `Need at least one more player to start the game.`;
             if (startGameMessage) startGameMessage.textContent = message;
             if (startGameBtn) startGameBtn.classList.add('inactive');
             this.broadcastGameStatusMessage(message, false);
@@ -1220,15 +1433,15 @@ class GameAdmin {
         }
     }
 
-    displayGuessingInterface(currentPlayer) {
+    displayGuessingInterface(currentPlayer, myGuesses) {
         DEBUG.log('Displaying guessing interface for player:', currentPlayer.name);
 
         this.currentGuessingPlayer = currentPlayer;
         const playerId = currentPlayer.id || currentPlayer.playerId;
         const isOwnStatements = playerId === 'admin';
-        console.log('Admin ID Check:', isOwnStatements, playerId, 'admin', currentPlayer);
+        DEBUG.log('Admin ID Check:', isOwnStatements, playerId, 'admin', currentPlayer);
 
-        this.currentQuestionType = currentPlayer.questionType || 'truth'; 
+        this.currentQuestionType = currentPlayer.questionType || 'truth';
         if (isOwnStatements) {
             DEBUG.log('These are admin\'s own statements - will show in inactive state');
         }
@@ -1263,6 +1476,12 @@ class GameAdmin {
             statementsContainer.appendChild(messageDiv);
         }
 
+        let previousGuess = null;
+        if (currentPlayer.setId && myGuesses && myGuesses[currentPlayer.setId] !== undefined) {
+            previousGuess = myGuesses[currentPlayer.setId];
+            DEBUG.log('Found previous guess for this statement set:', previousGuess);
+        }
+
         currentPlayer.statements.forEach((statement, index) => {
             const statementDiv = document.createElement('div');
             statementDiv.className = 'statement-option';
@@ -1279,10 +1498,10 @@ class GameAdmin {
 
             if (isOwnStatements) {
                 radio.classList.add("inactive");
-                radio.tabIndex = -1; 
+                radio.tabIndex = -1;
             } else {
                 radio.classList.remove("inactive");
-                radio.tabIndex = 0; 
+                radio.tabIndex = 0;
             }
 
             const label = document.createElement('label');
@@ -1292,6 +1511,35 @@ class GameAdmin {
 
             statementDiv.appendChild(radio);
             statementDiv.appendChild(label);
+
+            if (!isOwnStatements) {
+                if (previousGuess !== null) {
+                    statementDiv.classList.add('inactive');
+
+                    if (previousGuess === index) {
+                        radio.checked = true;
+                        statementDiv.style.opacity = '0.8';
+                        statementDiv.style.borderColor = 'var(--primary-color)';
+                    }
+
+                    radio.disabled = true;
+                } else {
+                    statementDiv.addEventListener('click', function() {
+                        if (!radio.disabled) {
+                            radio.checked = true;
+
+                            statementDiv.style.opacity = '0.8';
+                            statementDiv.style.borderColor = 'var(--primary-color)';
+
+                            const allRadios = statementsContainer.querySelectorAll('input[type="radio"]');
+                            allRadios.forEach(r => r.disabled = true);
+
+                            this.submitGuess(currentPlayer.playerId, index);
+                        }
+                    }.bind(this));
+                }
+            }
+
             statementsContainer.appendChild(statementDiv);
         });
 
@@ -1307,22 +1555,7 @@ class GameAdmin {
                 submitButton.classList.add('inactive');
                 submitButton.textContent = 'These are your statements';
             } else {
-                submitButton.classList.remove('inactive');
-                submitButton.textContent = 'Submit Guess';
-                submitButton.className = 'theme-button primary-button';
-
-                submitButton.onclick = () => {
-                    if (submitButton.classList.contains('inactive')) {
-                        return;
-                    }
-
-                    const selectedRadio = document.querySelector('input[name="guess"]:checked');
-                    if (selectedRadio) {
-                        this.submitGuess(currentPlayer.playerId, parseInt(selectedRadio.value));
-                    } else {
-                        DEBUG.log('No statement selected');
-                    }
-                };
+                submitButton.style.display = 'none';
             }
         }
     }
@@ -1333,8 +1566,8 @@ class GameAdmin {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(JSON.stringify({
                 type: 'submit_guess',
-                playerId: 'admin',  
-                targetPlayerId: playerId,  
+                playerId: 'admin',
+                targetPlayerId: playerId,
                 guessIndex: statementIndex
             }));
 
@@ -1443,7 +1676,7 @@ class GameAdmin {
         const adminNameInput = document.getElementById('adminName');
         const saveAdminNameBtn = document.getElementById('saveAdminName');
 
-        const savedAdminName = localStorage.getItem('one_lie_two_truthsadmin_name');
+        const savedAdminName = localStorage.getItem('truth_and_lies_admin_name');
         if (savedAdminName) {
             this.adminName = savedAdminName;
             DEBUG.log('Admin name loaded from localStorage:', savedAdminName);
@@ -1468,7 +1701,7 @@ class GameAdmin {
                 const name = adminNameInput.value.trim();
                 if (name) {
                     this.adminName = name;
-                    localStorage.setItem('one_lie_two_truthsadmin_name', name);
+                    localStorage.setItem('truth_and_lies_admin_name', name);
                     adminNameModal.classList.remove('visible');
 
 
@@ -1596,6 +1829,70 @@ class GameAdmin {
                 const teamHeader = document.createElement('h4');
                 teamHeader.className = 'team-header';
                 teamHeader.textContent = teamName;
+                teamHeader.dataset.teamId = team;
+                teamHeader.title = 'Click to edit team name';
+
+                teamHeader.addEventListener('click', (e) => {
+                    if (this.gamePhase !== 'setup' && this.gamePhase !== 'answering') return;
+
+                    if (teamHeader.classList.contains('editing')) return;
+
+                    const currentName = teamHeader.textContent;
+                    teamHeader.classList.add('editing');
+
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.className = 'edit-team-name';
+                    input.value = currentName;
+
+                    teamHeader.textContent = '';
+                    teamHeader.appendChild(input);
+
+                    input.focus();
+                    input.select();
+
+                    let saveHandled = false;
+
+                    const saveTeamName = () => {
+                        if (saveHandled) return;
+                        saveHandled = true;
+
+                        teamHeader.classList.remove('editing');
+
+                        const newName = input.value.trim();
+                        if (newName && newName !== currentName) {
+                            teamHeader.textContent = newName;
+                            this.teamNames[team] = newName;
+
+                            if (this.ws && this.isConnected) {
+                                this.ws.send(JSON.stringify({
+                                    type: 'update_team_name',
+                                    teamId: team,
+                                    newName: newName
+                                }));
+                                DEBUG.log(`Updated team ${team} name to: ${newName}`);
+                            }
+                        } else {
+                            teamHeader.textContent = currentName;
+                        }
+                    };
+
+                    input.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            saveTeamName();
+                        } else if (e.key === 'Escape') {
+                            teamHeader.classList.remove('editing');
+                            teamHeader.textContent = currentName;
+                            saveHandled = true;
+                        }
+                    });
+
+                    input.addEventListener('blur', saveTeamName);
+
+                    e.stopPropagation();
+                });
+
                 connectedPlayers.appendChild(teamHeader);
 
                 const teamList = document.createElement('ul');
@@ -1867,7 +2164,7 @@ class GameAdmin {
 
     generateQRCode() {
         if (typeof QRCode === 'undefined') {
-            console.error('QRCode library not loaded!');
+            DEBUG.log('QRCode library not loaded!');
             const script = document.createElement('script');
             script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
             script.onload = () => {
@@ -1880,7 +2177,7 @@ class GameAdmin {
 
         const qrContainer = document.getElementById('qrcode');
         if (!qrContainer) {
-            console.error('QR code container not found!');
+            DEBUG.log('QR code container not found!');
             return;
         }
         qrContainer.innerHTML = '';
@@ -1944,7 +2241,7 @@ class GameAdmin {
             };
 
         } catch (error) {
-            console.error('Error generating QR code:', error);
+            DEBUG.log('Error generating QR code:', error);
         }
     }
 
@@ -2014,7 +2311,7 @@ class GameAdmin {
 
             this.broadcastGameStatusMessage('Game has been reset. Ready to start a new game.', true);
 
-            this.clearAdminStatementsFromStorage();
+            this.clearDynamicStatementsFromStorage();
 
             this.updateUIForGamePhase();
             this.updateStartButton();
@@ -2087,7 +2384,7 @@ class GameAdmin {
     }
 
     showGameResults() {
-        console.log('Showing game results');
+        DEBUG.log('Showing game results');
 
         const resultsContainer = document.getElementById('results-container');
         if (!resultsContainer) return;
@@ -2584,7 +2881,7 @@ class GameAdmin {
                 if (playerId && currentTeamId) {
                     this.reassignPlayerTeam(playerId, currentTeamId);
                 } else {
-                    console.error('Missing playerId or teamId for team reassignment', { playerId, teamId: currentTeamId });
+                    DEBUG.log('Missing playerId or teamId for team reassignment', { playerId, teamId: currentTeamId });
                 }
             });
         });
@@ -2831,7 +3128,53 @@ class GameAdmin {
 
         this.updatePlayersList();
     }
+
+    updateCurrentAdminScore(scores) {
+        if (!scores) return;
+
+        const currentScoreDiv = document.querySelector('.current-score');
+        if (!currentScoreDiv) return;
+
+        const adminScoreObj = scores && scores.players ?
+            scores.players.find(p => p.id === 'admin') : null;
+
+        let teamScoreObj = null;
+        if (this.adminTeamId && scores && scores.teams) {
+            teamScoreObj = scores.teams.find(t => String(t.id) === String(this.adminTeamId));
+        }
+
+        let html = '';
+
+        if (adminScoreObj) {
+            html += `<div class="player-score">Admin score: <span class="score-value">${adminScoreObj.score || 0}</span></div>`;
+        }
+
+        if (teamScoreObj && this.teamMode !== 'allVsAll') {
+            html += `<div class="team-score">${teamScoreObj.name || 'Team'}: <span class="score-value">${teamScoreObj.score || 0}</span></div>`;
+        }
+
+        currentScoreDiv.innerHTML = html;
+    }
 }
+
+let wakeLock = null;
+
+async function requestWakeLock() {
+    try {
+        if ('wakeLock' in navigator) {
+            wakeLock = await navigator.wakeLock.request('screen');
+            DEBUG.log('WakeLock active');
+        }
+    } catch (err) {
+        DEBUG.log(`WakeLock error: ${err.name}, ${err.message}`);
+    }
+}
+
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        requestWakeLock();
+    }
+});
 
 document.addEventListener('DOMContentLoaded', () => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -2844,4 +3187,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     game = new GameAdmin();
     game.apiCode = code;
+
+    requestWakeLock();
 });

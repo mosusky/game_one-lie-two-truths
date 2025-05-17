@@ -1,5 +1,5 @@
 {
-  "name": "one-lie-two-truths-server",
+  "name": "truths-and-lies-server",
   "version": "1.0.0",
   "description": "WebSocket server for Truths and Lies game",
   "main": "server.js",

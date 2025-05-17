@@ -2,6 +2,7 @@
 
 body {
     --primary-color: #4CAF50;
+    --error-color: #e74c3c;
     margin: 0;
     padding: 0;
     min-height: 100dvh;
@@ -24,7 +25,7 @@ body {
     text-align: center;
     padding: 5px 0;
     margin-top: 5px;
-    color: #e74c3c;
+    color: var(--error-color);
     font-size: 0.9rem;
     font-weight: 500;
     opacity: 0.9;
@@ -484,6 +485,19 @@ body {
     flex-direction: column;
 }
 
+.statement-input textarea {
+
+}
+
+.statement-input-truth textarea {
+
+}
+
+.statement-input-lie textarea {
+    color: #fff;
+    background-color: var(--error-color);
+}
+
 .statement-input label {
     font-weight: 600;
     margin-bottom: 8px;
@@ -521,7 +535,7 @@ input[type="submit"].inactive {
     opacity: 0.6;
     cursor: not-allowed;
     background-color: #999;
-    pointer-events: none; 
+    pointer-events: none;
 }
 
 #submitStatements {
@@ -1348,6 +1362,37 @@ select {
     padding: 2rem;
     border-radius: 8px;
     text-align: center;
+}
+
+.team-header {
+    position: relative;
+    cursor: pointer;
+}
+
+.team-header::after {
+    content: '✏️';
+    font-size: 0.8em;
+    opacity: 0.5;
+    margin-left: 5px;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.team-header:hover::after {
+    opacity: 1;
+}
+
+.team-header.editing::after {
+    display: none;
+}
+
+.edit-team-name {
+    width: 90%;
+    padding: 4px;
+    font-size: 1em;
+    border: 1px solid #ccc;
+    border-radius: 4px;
     max-width: 80%;
 }
 
@@ -1688,15 +1733,29 @@ select {
 
 .admin-statement-inputs {
     display: flex;
+    flex-direction: column;
+    gap: 0px;
+    width: 100%;
+}
+
+.statement-set {
+    display: flex;
     gap: 10px;
     width: 100%;
+    margin-bottom: 20px;
+}
+
+.statement-set .set-title {
+    margin: 0 0 10px 0;
+    font-size: 1rem;
+    color: #444;
+    text-align: left;
 }
 
 .statement-input {
     display: flex;
     flex-direction: column;
     gap: 5px;
-    align-items: center;
     flex: 1;
     padding-top: 20px;
 }
@@ -1704,8 +1763,6 @@ select {
 .statement-input label {
     font-weight: 500;
     color: #555;
-    padding-bottom: 20px;
-    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
@@ -2036,7 +2093,7 @@ select {
         flex-direction: column;
         row-gap: 5px;
     }
-    
+
 }
 
 @media (max-width: 1024px) {
@@ -2142,7 +2199,7 @@ select {
 }
 
 .admin-columns:has(.guessing-phase) .middle-column {
-    
+
 }
 
 .admin-control-buttons {
@@ -2347,4 +2404,31 @@ select {
 
 #team-scores-container.hidden {
     display: none;
+}
+.round-title-container h4 {
+    margin: 0px;
+    margin-bottom: -10px;
+}
+
+.input-help-text {
+    font-size: 0.7rem;
+    color: #777;
+    margin-top: 4px;
+    font-style: italic;
+}
+
+.current-score {
+    text-align: center;
+    margin: 10px 0;
+    font-size: 0.9em;
+}
+
+.current-score .score-value {
+    font-weight: bold;
+    color: var(--primary-color);
+    font-size: 1em;
+}
+
+.player-score {
+    margin-bottom: 5px;
 }

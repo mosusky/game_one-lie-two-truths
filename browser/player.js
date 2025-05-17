@@ -52,6 +52,7 @@ class PlayerController {
         this.connectedPlayers = new Map();
         this.teamId = null;
         this.teamName = null;
+        this.roundsCount = 1;
 
         this.truth1 = '';
         this.truth2 = '';
@@ -254,57 +255,189 @@ class PlayerController {
         }
     }
 
+    generateStatementInputs() {
+        const container = document.getElementById('dynamicStatementInputs');
+        if (!container) return;
+
+        container.innerHTML = '';
+
+        console.log(this.roundsCount, 123);
+        for (let i = 1; i <= this.roundsCount; i++) {
+            if (this.roundsCount > 1) {
+                const titleContainer = document.createElement('div');
+                titleContainer.className = 'round-title-container';
+
+                const roundTitle = document.createElement('h4');
+                roundTitle.className = 'round-title';
+                roundTitle.textContent = `Round ${i}`;
+                titleContainer.appendChild(roundTitle);
+
+                container.appendChild(titleContainer);
+            }
+
+            const setContainer = document.createElement('div');
+            setContainer.className = 'statement-set';
+
+            const truthDiv1 = document.createElement('div');
+            truthDiv1.className = 'statement-input statement-input-truth';
+
+            const truthLabel1 = document.createElement('label');
+            const truthId1 = `playerTruth1_${i}`;
+            truthLabel1.setAttribute('for', truthId1);
+            truthLabel1.textContent = 'First truth';
+
+            const truthTextarea1 = document.createElement('textarea');
+            truthTextarea1.id = truthId1;
+            truthTextarea1.placeholder = 'Enter a true statement about yourself';
+
+            truthDiv1.appendChild(truthLabel1);
+            truthDiv1.appendChild(truthTextarea1);
+            setContainer.appendChild(truthDiv1);
+
+            truthTextarea1.addEventListener('input', () => {
+                this.validateStatementTextareas();
+                this.savePlayerStatementsToStorage();
+            });
+
+            const truthDiv2 = document.createElement('div');
+            truthDiv2.className = 'statement-input statement-input-truth';
+
+            const truthLabel2 = document.createElement('label');
+            const truthId2 = `playerTruth2_${i}`;
+            truthLabel2.setAttribute('for', truthId2);
+            truthLabel2.textContent = 'Second truth';
+
+            const truthTextarea2 = document.createElement('textarea');
+            truthTextarea2.id = truthId2;
+            truthTextarea2.placeholder = 'Enter another true statement about yourself';
+
+            truthDiv2.appendChild(truthLabel2);
+            truthDiv2.appendChild(truthTextarea2);
+            setContainer.appendChild(truthDiv2);
+
+            truthTextarea2.addEventListener('input', () => {
+                this.validateStatementTextareas();
+                this.savePlayerStatementsToStorage();
+            });
+
+            const lieDiv = document.createElement('div');
+            lieDiv.className = 'statement-input statement-input-lie';
+
+            const lieLabel = document.createElement('label');
+            const lieId = `playerLie_${i}`;
+            lieLabel.setAttribute('for', lieId);
+            lieLabel.textContent = 'One lie';
+
+            const lieTextarea = document.createElement('textarea');
+            lieTextarea.id = lieId;
+            lieTextarea.placeholder = 'Enter a false statement about yourself';
+
+            lieDiv.appendChild(lieLabel);
+            lieDiv.appendChild(lieTextarea);
+            setContainer.appendChild(lieDiv);
+
+            lieTextarea.addEventListener('input', () => {
+                this.validateStatementTextareas();
+                this.savePlayerStatementsToStorage();
+            });
+
+            container.appendChild(setContainer);
+        }
+
+        this.validateStatementTextareas();
+        this.loadPlayerStatementsFromStorage();
+    }
+
+    savePlayerStatementsToStorage() {
+        try {
+            const statements = {};
+
+            for (let i = 1; i <= this.roundsCount; i++) {
+                const truth1 = document.getElementById(`playerTruth1_${i}`);
+                const truth2 = document.getElementById(`playerTruth2_${i}`);
+                const lie = document.getElementById(`playerLie_${i}`);
+
+                if (truth1 && truth2 && lie) {
+                    statements[`set_${i}`] = {
+                        truth1: truth1.value,
+                        truth2: truth2.value,
+                        lie: lie.value
+                    };
+                }
+            }
+
+            localStorage.setItem('truths_and_lies_player_statements', JSON.stringify(statements));
+            DEBUG.log('Player statements saved to localStorage');
+
+        } catch (error) {
+            DEBUG.log('Error saving player statements to localStorage:', error);
+        }
+    }
+
+    loadPlayerStatementsFromStorage() {
+        try {
+            const savedData = localStorage.getItem('truths_and_lies_player_statements');
+            if (!savedData) return;
+
+            const savedStatements = JSON.parse(savedData);
+
+            Object.keys(savedStatements).forEach(setKey => {
+                const set = savedStatements[setKey];
+                const setNumber = parseInt(setKey.replace('set_', ''));
+
+                if (setNumber && !isNaN(setNumber) && setNumber <= this.roundsCount) {
+                    const truth1 = document.getElementById(`playerTruth1_${setNumber}`);
+                    const truth2 = document.getElementById(`playerTruth2_${setNumber}`);
+                    const lie = document.getElementById(`playerLie_${setNumber}`);
+
+                    if (truth1) truth1.value = set.truth1 || '';
+                    if (truth2) truth2.value = set.truth2 || '';
+                    if (lie) lie.value = set.lie || '';
+                }
+            });
+
+            DEBUG.log('Player statements loaded from localStorage');
+        } catch (error) {
+            DEBUG.log('Error loading player statements from storage:', error);
+        }
+    }
+
     submitStatements() {
-        const truth1Input = document.getElementById('playerTruth1');
-        const truth2Input = document.getElementById('playerTruth2');
-        const lieInput = document.getElementById('playerLie');
+        const statementSets = [];
 
-        if (!truth1Input || !truth2Input || !lieInput) {
-            this.showError('Error accessing statement inputs');
-            return;
+        for (let i = 1; i <= this.roundsCount; i++) {
+            const truth1Input = document.getElementById(`playerTruth1_${i}`);
+            const truth2Input = document.getElementById(`playerTruth2_${i}`);
+            const lieInput = document.getElementById(`playerLie_${i}`);
+
+            if (!truth1Input || !truth2Input || !lieInput) {
+                this.showError(`Error accessing statement inputs for round ${i}`);
+                return;
+            }
+
+            const truth1 = truth1Input.value.trim();
+            const truth2 = truth2Input.value.trim();
+            const lie = lieInput.value.trim();
+
+            if (!truth1 || !truth2 || !lie) {
+                this.showError(`Please fill in all three statements for round ${i}`);
+                return;
+            }
+
+            statementSets.push({
+                round: i,
+                truths: [truth1, truth2],
+                lie: lie
+            });
         }
 
-        const truth1 = truth1Input.value.trim();
-        const truth2 = truth2Input.value.trim();
-        const lie = lieInput.value.trim();
-
-        if (!truth1 || !truth2 || !lie) {
-            this.showError('Please fill in all three statements');
-            return;
-        }
-
-        this.truth1 = truth1;
-        this.truth2 = truth2;
-        this.lie = lie;
         this.statementsSubmitted = true;
 
         if (this.ws && this.isConnected) {
             this.ws.send(JSON.stringify({
                 type: 'submit_statements',
-                statements: {
-                    truths: [this.truth1, this.truth2],
-                    lie: this.lie
-                }
+                statementSets: statementSets
             }));
-
-            const submitBtn = document.getElementById('submitStatements');
-            if (submitBtn) {
-                submitBtn.classList.add('inactive');
-                submitBtn.textContent = 'Statements Submitted';
-                submitBtn.classList.add('submitted');
-            }
-
-            truth1Input.setAttribute('readonly', 'true');
-            truth2Input.setAttribute('readonly', 'true');
-            lieInput.setAttribute('readonly', 'true');
-            truth1Input.classList.add('inactive');
-            truth2Input.classList.add('inactive');
-            lieInput.classList.add('inactive');
-
-            const waitingMessage = document.getElementById('waitingMessage');
-            if (waitingMessage) {
-                waitingMessage.classList.remove('hidden');
-            }
         }
     }
 
@@ -360,16 +493,23 @@ class PlayerController {
         }
     }
 
-    displayPlayerStatements(player, statements) {
+    displayPlayerStatements(player, statements, myGuesses) {
         DEBUG.log('Displaying guessing interface for player:', player.name, statements);
 
-        this.currentPlayerBeingGuessed = player.id;
-
         const playerId = player.id || player.playerId;
+        this.currentPlayerBeingGuessed = playerId;
         const isOwnStatements = playerId === this.playerId;
-        console.log('ID Check:', isOwnStatements, playerId, this.playerId, player);
+        DEBUG.log('ID Check:', isOwnStatements, playerId, this.playerId, player);
         if (isOwnStatements) {
             DEBUG.log('These are player\'s own statements - will show in inactive state');
+        }
+
+        const setId = player.setId;
+        let previousGuess = null;
+
+        if (myGuesses && setId && myGuesses[setId] !== undefined) {
+            previousGuess = myGuesses[setId];
+            DEBUG.log('Found previous guess for set', setId, ':', previousGuess);
         }
 
         const guessInstruction = document.querySelector('.guessing-instruction p');
@@ -381,7 +521,7 @@ class PlayerController {
 
         const leftColumn = document.querySelector('.left-column');
         if (leftColumn) {
-            leftColumn.classList.add('guessing-phase'); 
+            leftColumn.classList.add('guessing-phase');
         }
 
         const playerNameElement = document.getElementById('current-player-name');
@@ -422,8 +562,8 @@ class PlayerController {
 
             if (isOwnStatements) {
                 statementDiv.classList.add('inactive');
-                statementDiv.style.pointerEvents = 'none'; 
-                statementDiv.style.opacity = '0.7'; 
+                statementDiv.style.pointerEvents = 'none';
+                statementDiv.style.opacity = '0.7';
             }
 
             const radio = document.createElement('input');
@@ -432,12 +572,22 @@ class PlayerController {
             radio.id = `statement${index+1}`;
             radio.value = index;
 
+            if (!isOwnStatements && previousGuess !== null && previousGuess === index) {
+                radio.checked = true;
+                statementDiv.style.opacity = '0.8';
+                statementDiv.style.borderColor = 'var(--primary-color)';
+            }
+
             if (isOwnStatements) {
                 radio.classList.add("inactive");
-                radio.tabIndex = -1; 
+                radio.tabIndex = -1;
             } else {
                 radio.classList.remove("inactive");
-                radio.tabIndex = 0; 
+                radio.tabIndex = 0;
+
+                if (previousGuess !== null) {
+                    radio.disabled = true;
+                }
             }
 
             const label = document.createElement('label');
@@ -449,9 +599,46 @@ class PlayerController {
             statementDiv.appendChild(label);
             statementsContainer.appendChild(statementDiv);
 
-            statementDiv.addEventListener('click', function() {
-                radio.checked = true;
-            });
+            if (!isOwnStatements) {
+                if (previousGuess === null) {
+                    statementDiv.addEventListener('click', () => {
+                        radio.checked = true;
+
+                        const targetPlayerId = playerId;
+                        DEBUG.log('Submitting guess immediately:', targetPlayerId, index);
+
+                        const allStatements = statementsContainer.querySelectorAll('.statement-option');
+                        allStatements.forEach(s => {
+                            s.style.opacity = '1';
+                            const radioInput = s.querySelector('input[type="radio"]');
+                            if (radioInput) radioInput.disabled = false;
+                        });
+
+                        statementDiv.style.opacity = '0.8';
+                        statementDiv.style.borderColor = 'var(--primary-color)';
+
+                        const allRadios = statementsContainer.querySelectorAll('input[type="radio"]');
+                        allRadios.forEach(r => r.disabled = true);
+
+                        this.submitGuess(targetPlayerId, index);
+                    });
+                } else {
+                    statementDiv.classList.add('inactive');
+
+                    if (previousGuess === index) {
+                        statementDiv.style.opacity = '0.8';
+                        statementDiv.style.borderColor = 'var(--primary-color)';
+                    }
+
+                    radio.disabled = true;
+                }
+            } else {
+                statementDiv.addEventListener('click', function() {
+                    if (!radio.disabled) {
+                        radio.checked = true;
+                    }
+                });
+            }
 
             setTimeout(() => {
                 statementDiv.classList.add('fade-in');
@@ -459,36 +646,45 @@ class PlayerController {
         }
 
         const submitButton = document.getElementById('submit-guess-button');
-        if (submitButton) {
-            if (isOwnStatements) {
-                submitButton.classList.add('inactive');
-                submitButton.textContent = 'These are your statements';
-            } else {
-                submitButton.classList.remove('inactive');
-                submitButton.textContent = 'Submit Guess';
+        submitButton.style.display = 'none';
+    }
 
-                submitButton.dataset.playerId = playerId;  
+    updateCurrentPlayerScore(scores) {
+        const currentScoreDiv = document.querySelector('.current-score');
+        if (!currentScoreDiv) return;
 
-                submitButton.onclick = () => {
-                    if (submitButton.classList.contains('inactive')) {
-                        return;
-                    }
+        if (!scores) {
+            currentScoreDiv.innerHTML = '';
+            return;
+        }
 
-                    const targetPlayerId = submitButton.dataset.playerId;
-                    const selectedRadio = document.querySelector('input[name="guess"]:checked');
-                    if (selectedRadio) {
-                        console.log('Submitting guess:', targetPlayerId, parseInt(selectedRadio.value));
-                        this.submitGuess(targetPlayerId, parseInt(selectedRadio.value));
-                    } else {
-                        DEBUG.log('No statement selected');
-                    }
-                };
+        const playerScoreObj = scores && scores.players ?
+            scores.players.find(p => p.id === this.playerId) : null;
+
+        let teamScoreObj = null;
+        if (this.teamId && scores && scores.teams) {
+            teamScoreObj = scores.teams.find(t => String(t.id) === String(this.teamId));
+
+            if (!teamScoreObj && scores.teams.length > 0) {
+                console.log('Team score not found:', this.teamId, 'Available teams:', scores.teams);
             }
         }
+
+        let html = '';
+
+        if (playerScoreObj) {
+            html += `<div class="player-score">Your score: <span class="score-value">${playerScoreObj.score || 0}</span></div>`;
+        }
+
+        if (teamScoreObj && this.teamMode !== 'allVsAll') {
+            html += `<div class="team-score">${this.teamName || 'Team'}: <span class="score-value">${teamScoreObj.score || 0}</span></div>`;
+        }
+
+        currentScoreDiv.innerHTML = html;
     }
 
     showGameResults() {
-        console.log('Showing game results');
+        DEBUG.log('Showing game results');
 
         const resultsContainer = document.getElementById('results-container');
         if (!resultsContainer) return;
@@ -751,7 +947,7 @@ class PlayerController {
     initializePlayersList() {
         this.playersList = document.getElementById('playersList');
         if (!this.playersList) {
-            console.log('Players list element not found, will be dynamically created when needed');
+            DEBUG.log('Players list element not found, will be dynamically created when needed');
         }
 
         this.playersContainer = document.querySelector('.game-players');
@@ -798,8 +994,8 @@ class PlayerController {
         const port = window.location.port || '80';
         const isLocalDevelopment = port === '777';
         const protocol = isLocalDevelopment ? "ws:" : "wss:";
-        const host = isLocalDevelopment ? "127.0.0.1" : port === '3081' ? 'deploy.ylo.one' : 'gs.team-play.online/one-lie-two-truths-server';
-        const wsPort = isLocalDevelopment ? '8083' : port === '3081' ? '3091' : undefined;
+        const host = isLocalDevelopment ? "127.0.0.1" : port === '3082' ? 'deploy.ylo.one' : 'gs.team-play.online/truths-and-lies-server';
+        const wsPort = isLocalDevelopment ? '8083' : port === '3082' ? '3092' : undefined;
 
         const wsUrl = wsPort ? `${protocol}//${host}:${wsPort}` : `${protocol}//${host}`;
         DEBUG.log('Connecting to server at:', wsUrl);
@@ -847,7 +1043,7 @@ class PlayerController {
         };
 
         this.ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
+            DEBUG.log('WebSocket error:', error);
             this.isConnected = false;
             this.updateConnectionStatus('Connection error, attempting to reconnect...', true);
         };
@@ -905,17 +1101,38 @@ class PlayerController {
                                 this.teamId = 0;
                                 this.teamName = null;
                             }
+
+                            this.updateCurrentPlayerScore(data.scores);
+
+                            const submitBtn = document.getElementById('submitStatements');
+                            if (submitBtn) {
+                                if (myInfo.submittedStatements) {
+                                    this.statementsSubmitted = true;
+
+                                    submitBtn.classList.add('updated');
+                                    submitBtn.classList.remove('inactive', 'submitted');
+
+                                    submitBtn.textContent = 'Update Statements ✓';
+
+                                    setTimeout(() => {
+                                        submitBtn.textContent = 'Update Statements';
+                                    }, 1000);
+                                } else {
+                                    this.statementsSubmitted = false;
+                                    submitBtn.textContent = 'I\'m Ready to Play';
+                                }
+                            }
                         }
                     }
 
                     this.updateTeamBadgeDisplay(this.teamName, data.teamMode);
+                    this.roundsCount = data.roundsCount;
+                    this.generateStatementInputs();
 
                     if (data.adminName) {
                         this.adminName = data.adminName;
                         DEBUG.log('Admin name updated:', this.adminName);
                     }
-
-                    this.reloadStatements(data);
 
                     if (data.statusMessage !== undefined) {
                         const messageDiv = document.getElementById('start-game-message');
@@ -954,6 +1171,9 @@ class PlayerController {
                                 DEBUG.log('Showing game results from game state:', data.scores);
                                 this.scores = data.scores;
                                 this.teamMode = data.teamMode || 'allVsAll';
+
+                                this.updateCurrentPlayerScore(data.scores);
+
                                 this.showGameResults();
                             }
                         } else if (this.gameStarted && this.gamePhase === 'guessing') {
@@ -978,7 +1198,7 @@ class PlayerController {
                                     });
                                 }
 
-                                this.displayPlayerStatements(data.currentGuessingPlayer, statementsToDisplay);
+                                this.displayPlayerStatements(data.currentGuessingPlayer, statementsToDisplay, data.myGuesses);
                             }
 
                             if (data.countdown && data.countdown.inCountdown && data.countdown.context === 'perGuess') {
@@ -1283,7 +1503,7 @@ class PlayerController {
                     DEBUG.log('Next player to guess:', data);
 
                     if (data.player && data.statements) {
-                        this.displayPlayerStatements(data.player, data.statements);
+                        this.displayPlayerStatements(data.player, data.statements, null);
 
                         this.showGameMessage(`Now guessing ${data.player.name}'s statements!`, 'game-message next-player');
                     }
@@ -1721,16 +1941,24 @@ class PlayerController {
         }
 
         this.validateTextareasTimeout = setTimeout(() => {
-            const truth1 = document.getElementById('playerTruth1')?.value.trim() || '';
-            const truth2 = document.getElementById('playerTruth2')?.value.trim() || '';
-            const lie = document.getElementById('playerLie')?.value.trim() || '';
+            let allFieldsComplete = true;
+
+            for (let i = 1; i <= this.roundsCount; i++) {
+                const truth1 = document.getElementById(`playerTruth1_${i}`)?.value.trim() || '';
+                const truth2 = document.getElementById(`playerTruth2_${i}`)?.value.trim() || '';
+                const lie = document.getElementById(`playerLie_${i}`)?.value.trim() || '';
+
+                if (!truth1 || !truth2 || !lie) {
+                    allFieldsComplete = false;
+                    break;
+                }
+            }
 
             const submitButton = document.getElementById('submitStatements');
             if (submitButton) {
-                const fieldsAreComplete = (truth1 && truth2 && lie);
-                submitButton.setAttribute('aria-busy', !fieldsAreComplete);
+                submitButton.setAttribute('aria-busy', !allFieldsComplete);
 
-                if (!fieldsAreComplete) {
+                if (!allFieldsComplete) {
                     submitButton.classList.add('inactive');
                 } else {
                     submitButton.classList.remove('inactive');
@@ -1805,46 +2033,7 @@ class PlayerController {
         }
     }
 
-    reloadStatements(data) {
-        if (data.myStatements) {
-            DEBUG.log('Restoring statements from server:', data.myStatements);
 
-            if (data.myStatements.truths && data.myStatements.lie) {
-                this.truth1 = data.myStatements.truths[0] || '';
-                this.truth2 = data.myStatements.truths[1] || '';
-                this.lie = data.myStatements.lie || '';
-                this.statementsSubmitted = true;
-
-                const truth1Input = document.getElementById('playerTruth1');
-                const truth2Input = document.getElementById('playerTruth2');
-                const lieInput = document.getElementById('playerLie');
-                const submitBtn = document.getElementById('submitStatements');
-
-                if (truth1Input && truth2Input && lieInput) {
-                    truth1Input.value = this.truth1;
-                    truth2Input.value = this.truth2;
-                    lieInput.value = this.lie;
-                    truth1Input.setAttribute('readonly', 'true');
-                    truth2Input.setAttribute('readonly', 'true');
-                    lieInput.setAttribute('readonly', 'true');
-                    truth1Input.classList.add('inactive');
-                    truth2Input.classList.add('inactive');
-                    lieInput.classList.add('inactive');
-                }
-
-                if (submitBtn) {
-                    submitBtn.classList.add('inactive');
-                    submitBtn.textContent = 'Answers Submitted';
-                    submitBtn.classList.add('submitted');
-                }
-
-                const waitingMessage = document.getElementById('waitingMessage');
-                if (waitingMessage) {
-                    waitingMessage.classList.remove('hidden');
-                }
-            }
-        }
-    }
 
     showCountdownTimer(seconds) {
         this.resetCountdownTimer();
@@ -1881,41 +2070,25 @@ class PlayerController {
             timerElement.classList.remove('timer-state-green', 'timer-state-orange', 'timer-state-red');
 
             if (timeLeft === 2 && this.gamePhase === 'guessing') {
-                const submitButton = document.getElementById('submit-guess-button');
+                const isOwnStatements = this.currentPlayerBeingGuessed === this.playerId;
 
-                if (submitButton && !submitButton.classList.contains('inactive')) {
-                    const targetPlayerId = submitButton.dataset.playerId;
+                if (!isOwnStatements) {
+                    const selectedRadio = document.querySelector('input[name="guess"]:checked');
 
-                    if (targetPlayerId) {
-                        const selectedRadio = document.querySelector('input[name="guess"]:checked');
+                    if (!selectedRadio) {
+                        DEBUG.log('Auto-selecting and submitting random guess');
+                        const availableOptions = document.querySelectorAll('input[name="guess"]:not(:disabled)');
 
-                        if (selectedRadio) {
-                            DEBUG.log('Auto-submitting selected guess with 2 seconds remaining');
-                            this.submitGuess(targetPlayerId, parseInt(selectedRadio.value));
+                        if (availableOptions.length > 0) {
+                            const randomIndex = Math.floor(Math.random() * availableOptions.length);
+                            const randomOption = availableOptions[randomIndex];
 
-                            const radioLabel = selectedRadio.closest('label');
-                            if (radioLabel) {
-                                radioLabel.classList.add('auto-selected');
-                                radioLabel.setAttribute('data-auto-action', 'auto-submitted');
-                            }
-                        } else {
-                            DEBUG.log('Auto-selecting and submitting random guess');
-                            const availableOptions = document.querySelectorAll('input[name="guess"]');
-
-                            if (availableOptions.length > 0) {
-                                const randomIndex = Math.floor(Math.random() * availableOptions.length);
-                                const randomOption = availableOptions[randomIndex];
-
+                            const parentDiv = randomOption.closest('.statement-option');
+                            if (parentDiv) {
+                                DEBUG.log('Clicking parent div to trigger submission');
+                                parentDiv.click();
+                            } else {
                                 randomOption.checked = true;
-
-                                const radioLabel = randomOption.closest('label');
-                                if (radioLabel) {
-                                    radioLabel.classList.add('auto-selected');
-                                    radioLabel.setAttribute('data-auto-action', 'auto-selected');
-                                }
-
-                                DEBUG.log('Auto-selecting and submitting random guess:', targetPlayerId, parseInt(randomOption.value));
-                                this.submitGuess(targetPlayerId, parseInt(randomOption.value));
                             }
                         }
                     }

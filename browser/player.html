@@ -49,36 +49,14 @@
               </div>
 
               <div class="statements-form" id="submitStatementsContainer">
-                <h3>2 Truths and 1 Lie</h3>
+                <h3>My 2 Truths and 1 Lie</h3>
 
-                <div class="statement-inputs">
-                  <div class="statement-input">
-                    <label for="playerTruth1">First truth about me</label>
-                    <textarea id="playerTruth1"></textarea>
-                  </div>
-
-                  <div class="statement-input">
-                    <label for="playerTruth2">Second truth about me</label>
-                    <textarea id="playerTruth2"></textarea>
-                  </div>
-
-                  <div class="statement-input">
-                    <label for="playerLie">One lie about me</label>
-                    <textarea id="playerLie"></textarea>
-                  </div>
-                </div>
+                <div id="dynamicStatementInputs" class="player-statement-inputs"></div>
 
                 <button id="submitStatements" class="theme-button primary-button">
                   <i class="fas fa-check"></i> I'm Ready to Play
                 </button>
 
-                <div id="submissionStatus" class="submission-status hidden">
-                  <i class="fas fa-check-circle"></i> Your answers have been submitted!
-                </div>
-
-                <div id="waitingMessage" class="waiting-message hidden">
-                  <p>Your answers have been submitted! Waiting for other players to finish...</p>
-                </div>
               </div>
             </div>
             <div class="column-content-2">
@@ -88,7 +66,7 @@
               </div>
 
               <div class="guessing-instruction">
-                <p>Select one Truth</p>
+                <p></p>
               </div>
 
               <div id="statements-container" class="statements-container">
@@ -158,6 +136,7 @@
                   </svg>
                   <div class="timer-display">--</div>
                 </div>
+                <div class="current-score"></div>
                 <div id="start-game-message" class="start-game-message"></div>
               </div>
 
