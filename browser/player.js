@@ -1,7 +1,7 @@
 window.DEBUG = {
     enabled: null,
     isLocal: () => (window.location.port || '80') === '777',
-    log: function(...args) {
+    log: function (...args) {
         if (this.enabled === null) {
             if (this.isLocal()) {
                 console.log(...args);
@@ -10,20 +10,20 @@ window.DEBUG = {
             console.log(...args);
         }
     },
-    enable: function() {
+    enable: function () {
         this.enabled = true;
         console.log('Debug mode explicitly enabled');
     },
-    deactivate: function() {
+    deactivate: function () {
         this.enabled = false;
         console.log('Debug mode explicitly deactivated');
     },
-    reset: function() {
+    reset: function () {
         this.enabled = null;
         console.log('Debug mode reset to default behavior');
     },
-    on: function() { this.enable(); },
-    off: function() { this.deactivate(); }
+    on: function () { this.enable(); },
+    off: function () { this.deactivate(); }
 };
 
 function normalizeImagePath(imagePath) {
@@ -261,7 +261,6 @@ class PlayerController {
 
         container.innerHTML = '';
 
-        console.log(this.roundsCount, 123);
         for (let i = 1; i <= this.roundsCount; i++) {
             if (this.roundsCount > 1) {
                 const titleContainer = document.createElement('div');
@@ -433,6 +432,15 @@ class PlayerController {
 
         this.statementsSubmitted = true;
 
+        const submitBtnContainer = document.querySelector('.submit-button-container');
+        if (submitBtnContainer) {
+            submitBtnContainer.classList.remove('hide-checkmark');
+
+            setTimeout(() => {
+                submitBtnContainer.classList.add('hide-checkmark');
+            }, 2000);
+        }
+
         if (this.ws && this.isConnected) {
             this.ws.send(JSON.stringify({
                 type: 'submit_statements',
@@ -467,7 +475,6 @@ class PlayerController {
             } else {
                 button.classList.remove('selected');
             }
-            button.classList.add('inactive');
         });
 
         const waitingForNextMessage = document.getElementById('waitingForNextMessage');
@@ -477,8 +484,6 @@ class PlayerController {
 
         const radioButtons = document.querySelectorAll('input[name="guess"]');
         radioButtons.forEach(radio => {
-            radio.parentElement.classList.add('inactive');
-            radio.classList.add('inactive');
         });
 
         const submitButton = document.getElementById('submit-guess-button');
@@ -569,7 +574,7 @@ class PlayerController {
             const radio = document.createElement('input');
             radio.type = 'radio';
             radio.name = 'guess';
-            radio.id = `statement${index+1}`;
+            radio.id = `statement${index + 1}`;
             radio.value = index;
 
             if (!isOwnStatements && previousGuess !== null && previousGuess === index) {
@@ -584,14 +589,10 @@ class PlayerController {
             } else {
                 radio.classList.remove("inactive");
                 radio.tabIndex = 0;
-
-                if (previousGuess !== null) {
-                    radio.disabled = true;
-                }
             }
 
             const label = document.createElement('label');
-            label.htmlFor = `statement${index+1}`;
+            label.htmlFor = `statement${index + 1}`;
             label.className = 'statement-text';
             label.textContent = statementText;
 
@@ -600,43 +601,28 @@ class PlayerController {
             statementsContainer.appendChild(statementDiv);
 
             if (!isOwnStatements) {
-                if (previousGuess === null) {
-                    statementDiv.addEventListener('click', () => {
-                        radio.checked = true;
-
-                        const targetPlayerId = playerId;
-                        DEBUG.log('Submitting guess immediately:', targetPlayerId, index);
-
-                        const allStatements = statementsContainer.querySelectorAll('.statement-option');
-                        allStatements.forEach(s => {
-                            s.style.opacity = '1';
-                            const radioInput = s.querySelector('input[type="radio"]');
-                            if (radioInput) radioInput.disabled = false;
-                        });
-
-                        statementDiv.style.opacity = '0.8';
-                        statementDiv.style.borderColor = 'var(--primary-color)';
-
-                        const allRadios = statementsContainer.querySelectorAll('input[type="radio"]');
-                        allRadios.forEach(r => r.disabled = true);
-
-                        this.submitGuess(targetPlayerId, index);
-                    });
-                } else {
-                    statementDiv.classList.add('inactive');
-
-                    if (previousGuess === index) {
-                        statementDiv.style.opacity = '0.8';
-                        statementDiv.style.borderColor = 'var(--primary-color)';
-                    }
-
-                    radio.disabled = true;
+                if (previousGuess === index) {
+                    statementDiv.style.opacity = '0.8';
+                    statementDiv.style.borderColor = 'var(--primary-color)';
                 }
-            } else {
-                statementDiv.addEventListener('click', function() {
-                    if (!radio.disabled) {
-                        radio.checked = true;
-                    }
+
+                statementDiv.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    radio.checked = true;
+
+                    const targetPlayerId = playerId;
+                    DEBUG.log('Submitting guess:', targetPlayerId, index);
+
+                    const allStatements = statementsContainer.querySelectorAll('.statement-option');
+                    allStatements.forEach(s => {
+                        s.style.opacity = '1';
+                        s.style.borderColor = '';
+                    });
+
+                    statementDiv.style.opacity = '0.8';
+                    statementDiv.style.borderColor = 'var(--primary-color)';
+
+                    this.submitGuess(targetPlayerId, index);
                 });
             }
 
@@ -782,12 +768,13 @@ class PlayerController {
 
                     const correctLies = player.lieCorrectCount || 0;
                     const totalLieRounds = scoreData.lieRoundsTotal || 0;
+                    const playerGuesses = player.totalGuesses || 0;
 
                     scoreItem.innerHTML = `
                         <div class="score-name">${player.name}</div>
                         <div class="score-details">
                             <span class="success-rate">${correctLies} lies detected</span>
-                            <span class="details">(${correctLies}/${totalLieRounds})</span>
+                            <span class="details">(${correctLies}/${playerGuesses})</span>
                         </div>
                     `;
 
@@ -900,7 +887,7 @@ class PlayerController {
             } else {
                 playerNameInput.value = this.getRandomName();
             }
-            playerNameInput.addEventListener('focus', function() {
+            playerNameInput.addEventListener('focus', function () {
                 this.select();
             });
         }
@@ -994,7 +981,7 @@ class PlayerController {
         const port = window.location.port || '80';
         const isLocalDevelopment = port === '777';
         const protocol = isLocalDevelopment ? "ws:" : "wss:";
-        const host = isLocalDevelopment ? "127.0.0.1" : port === '3082' ? 'deploy.ylo.one' : 'gs.team-play.online/one-lie-two-truths-server';
+        const host = isLocalDevelopment ? "127.0.0.1" : port === '3082' ? 'deploy.ylo.one' : 'gs.team-play.online/truths-and-lies-server';
         const wsPort = isLocalDevelopment ? '8083' : port === '3082' ? '3092' : undefined;
 
         const wsUrl = wsPort ? `${protocol}//${host}:${wsPort}` : `${protocol}//${host}`;
@@ -1051,7 +1038,12 @@ class PlayerController {
         this.ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
 
-            switch(data.type) {
+            switch (data.type) {
+                case 'show_message':
+                    DEBUG.log('Received show_message event:', data);
+                    this.showMessage(data.message, data.duration || 3000);
+                    break;
+
                 case 'countdown_started':
                     DEBUG.log('Countdown started:', data);
 
@@ -1071,6 +1063,8 @@ class PlayerController {
 
                     this.gamePhase = data.gamePhase || 'setup';
                     this.guessingPhase = (this.gamePhase === 'guessing');
+
+                    this.updateGameProgressBar(data);
 
                     if (this.gamePhase === 'setup') {
                         DEBUG.log('Game in SETUP phase - resetting countdown timer');
@@ -1111,12 +1105,7 @@ class PlayerController {
 
                                     submitBtn.classList.add('updated');
                                     submitBtn.classList.remove('inactive', 'submitted');
-
-                                    submitBtn.textContent = 'Update Statements ✓';
-
-                                    setTimeout(() => {
-                                        submitBtn.textContent = 'Update Statements';
-                                    }, 1000);
+                                    submitBtn.textContent = 'Update Statements';
                                 } else {
                                     this.statementsSubmitted = false;
                                     submitBtn.textContent = 'I\'m Ready to Play';
@@ -1357,7 +1346,7 @@ class PlayerController {
                         teamId: data.teamId,
                         teamName: data.teamName || (data.teamId ? `Team ${data.teamId}` : null),
                         statementsSubmitted: false,
-                        color: '#' + Math.floor(Math.random()*16777215).toString(16)
+                        color: '#' + Math.floor(Math.random() * 16777215).toString(16)
                     });
 
                     this.showGameMessage(`${data.name} has joined the game!`);
@@ -1773,9 +1762,45 @@ class PlayerController {
         }
     }
 
+    showMessage(message, duration = 3000) {
+        const messageOverlay = document.getElementById('messageOverlay');
+        const messageText = messageOverlay.querySelector('.message-text');
+
+        if (!messageOverlay || !messageText) return;
+
+        messageText.textContent = message;
+
+        messageOverlay.classList.remove('hidden');
+        messageOverlay.classList.add('visible');
+
+        setTimeout(() => {
+            messageOverlay.classList.remove('visible');
+            setTimeout(() => {
+                messageOverlay.classList.add('hidden');
+            }, 300); 
+        }, duration);
+    }
+
     startReconnection() {
         if (this.reconnectInterval) {
             clearInterval(this.reconnectInterval);
+        }
+
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+        if (isMobile) {
+            setTimeout(() => {
+                if (!this.isConnected) {
+                    this.updateConnectionStatus('Connection lost. Please refresh the page.', true);
+                    const overlay = document.getElementById('connectionLostOverlay');
+                    if (overlay) {
+                        overlay.classList.remove('hidden');
+                    }
+                    if (this.reconnectInterval) {
+                        clearInterval(this.reconnectInterval);
+                    }
+                }
+            }, 5000);
         }
 
         this.reconnectAttempts = 0;
@@ -1798,6 +1823,33 @@ class PlayerController {
                 clearInterval(this.reconnectInterval);
             }
         }, 3000);
+    }
+
+    updateGameProgressBar(data) {
+        const progressBar = document.getElementById('gameProgressBar');
+        const currentRoundNum = document.getElementById('currentRoundNum');
+        const totalRoundsNum = document.getElementById('totalRoundsNum');
+
+        if (!progressBar || !currentRoundNum || !totalRoundsNum || !data.currentSetIndex || !data.totalSets) return;
+
+        const currentSetIndex = data.currentSetIndex;
+        const totalSets = data.totalSets;
+
+        let progressPercentage = 0;
+
+        if (this.gamePhase === 'setup') {
+            progressPercentage = 0;
+        } else if (this.gamePhase === 'gameEnd') {
+            progressPercentage = 100;
+        } else {
+            progressPercentage = (currentSetIndex / totalSets) * 100;
+        }
+
+        progressBar.style.width = `${progressPercentage}%`;
+        progressBar.style.background = 'linear-gradient(to right, #6db3f2, #4a8ed4)';
+
+        currentRoundNum.textContent = currentSetIndex;
+        totalRoundsNum.textContent = totalSets;
     }
 
     handleGameJoined(data) {
@@ -2072,12 +2124,12 @@ class PlayerController {
             if (timeLeft === 2 && this.gamePhase === 'guessing') {
                 const isOwnStatements = this.currentPlayerBeingGuessed === this.playerId;
 
-                if (!isOwnStatements) {
+                if (!isOwnStatements && 1 === 2) {
                     const selectedRadio = document.querySelector('input[name="guess"]:checked');
 
                     if (!selectedRadio) {
                         DEBUG.log('Auto-selecting and submitting random guess');
-                        const availableOptions = document.querySelectorAll('input[name="guess"]:not(:disabled)');
+                        const availableOptions = document.querySelectorAll('input[name="guess"]');
 
                         if (availableOptions.length > 0) {
                             const randomIndex = Math.floor(Math.random() * availableOptions.length);

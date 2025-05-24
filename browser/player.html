@@ -53,13 +53,26 @@
 
                 <div id="dynamicStatementInputs" class="player-statement-inputs"></div>
 
-                <button id="submitStatements" class="theme-button primary-button">
-                  <i class="fas fa-check"></i> I'm Ready to Play
-                </button>
+                <div class="submit-button-container hide-checkmark">
+                  <button id="submitStatements" class="theme-button primary-button">
+                    I'm Ready to Play
+                  </button>
+                  <i class="fas fa-check"></i>
+                </div>
 
               </div>
             </div>
             <div class="column-content-2">
+
+              <div class="game-progress">
+                <div class="progress-container">
+                  <div class="progress-bar" id="gameProgressBar"></div>
+                </div>
+                <div class="progress-info">
+                  <span class="current-round"><span id="currentRoundNum">1</span>/<span id="totalRoundsNum">1</span></span>
+                </div>
+              </div>
+              
               <div class="current-player-info">
                 <h3>Statements from:</h3>
                 <div id="current-player-name" class="current-player-name">Player Name</div>
@@ -187,6 +200,12 @@
 
   <div class="countdown-overlay" id="countdownOverlay">
     <div class="countdown-number"></div>
+  </div>
+
+  <div class="message-overlay hidden" id="messageOverlay">
+    <div class="message-content">
+      <div class="message-text"></div>
+    </div>
   </div>
 
   <div id="error-overlay" class="error-overlay hidden">

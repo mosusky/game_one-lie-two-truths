@@ -39,6 +39,25 @@ class GameAdmin {
         overlay.classList.remove('hidden');
     }
 
+    showMessage(message, duration = 3000) {
+        const messageOverlay = document.getElementById('messageOverlay');
+        const messageText = messageOverlay.querySelector('.message-text');
+
+        if (!messageOverlay || !messageText) return;
+
+        messageText.textContent = message;
+
+        messageOverlay.classList.remove('hidden');
+        messageOverlay.classList.add('visible');
+
+        setTimeout(() => {
+            messageOverlay.classList.remove('visible');
+            setTimeout(() => {
+                messageOverlay.classList.add('hidden');
+            }, 300); 
+        }, duration);
+    }
+
     constructor() {
         this.ws = null;
         this.gameCode = null;
@@ -174,7 +193,7 @@ class GameAdmin {
         const port = window.location.port || '80';
         const isLocalDevelopment = port === '777';
         const protocol = isLocalDevelopment ? "ws:" : "wss:";
-        const host = isLocalDevelopment ? "127.0.0.1" : port === '3082' ? 'deploy.ylo.one' : 'gs.team-play.online/one-lie-two-truths-server';
+        const host = isLocalDevelopment ? "127.0.0.1" : port === '3082' ? 'deploy.ylo.one' : 'gs.team-play.online/truth-and-lies-server';
         const wsPort = isLocalDevelopment ? '8083' : port === '3082' ? '3092' : undefined;
 
         const wsUrl = wsPort ? `${protocol}//${host}:${wsPort}` : `${protocol}//${host}`;
@@ -228,6 +247,11 @@ class GameAdmin {
                 const data = JSON.parse(event.data);
 
                 switch(data.type) {
+                    case 'show_message':
+                        DEBUG.log('Received show_message event:', data);
+                        this.showMessage(data.message, data.duration || 3000);
+                        break;
+
                     case 'example_statements':
                         this.updateCarouselWithExamples(data.examples);
                         break;
@@ -275,6 +299,8 @@ class GameAdmin {
                                 this.teamMode = data.teamMode;
                             }
                         }
+
+                        this.updateGameProgressBar(data);
 
                         if (data.gamePhase) {
                             const previousPhase = this.gamePhase;
@@ -686,7 +712,7 @@ class GameAdmin {
             } else if (value > max) {
                 inputElement.value = max;
             } else {
-                inputElement.value = value; 
+                inputElement.value = value;
             }
 
             inputElement.dispatchEvent(new Event('change'));
@@ -706,12 +732,12 @@ class GameAdmin {
             if (e.key === 'ArrowUp') {
                 const newValue = Math.min(currentValue + 1, max);
                 inputElement.value = newValue;
-                e.preventDefault(); 
+                e.preventDefault();
                 inputElement.dispatchEvent(new Event('change'));
             } else if (e.key === 'ArrowDown') {
                 const newValue = Math.max(currentValue - 1, min);
                 inputElement.value = newValue;
-                e.preventDefault(); 
+                e.preventDefault();
                 inputElement.dispatchEvent(new Event('change'));
             }
         });
@@ -789,7 +815,7 @@ class GameAdmin {
         if (!container) return;
 
         const existingValues = {};
-        for (let i = 1; i <= 5; i++) { 
+        for (let i = 1; i <= 5; i++) {
             const truthId1 = `adminTruth1_${i}`;
             const truthId2 = `adminTruth2_${i}`;
             const lieId = `adminLie_${i}`;
@@ -1216,7 +1242,7 @@ class GameAdmin {
                 const targetPlayerId = this.currentGuessingPlayer.id || this.currentGuessingPlayer.playerId;
                 console.log('auto-check', targetPlayerId, this.currentGuessingPlayer);
                 const isOwnStatements = targetPlayerId === 'admin';
-                if (targetPlayerId && !isOwnStatements) {
+                if (targetPlayerId && !isOwnStatements && 1 === 2) {
                     DEBUG.log('Auto-selecting and submitting random guess for admin');
                     const availableOptions = document.querySelectorAll('input[name="guess"]');
                     console.log('auto-check', availableOptions);
@@ -1373,14 +1399,18 @@ class GameAdmin {
         const totalResponders = readyPlayers + 1;
 
         if (readyPlayers < totalPlayers) {
-            const message = `Waiting for ${totalPlayers - readyPlayers} more player(s) to submit statements.`;
+            const remainingCount = totalPlayers - readyPlayers;
+            const playerText = remainingCount === 1 ? 'player needs' : 'players need';
+            const message = `${remainingCount} more ${playerText} to submit statements.`;
             if (startGameMessage) startGameMessage.textContent = message;
-            if (startGameBtn) startGameBtn.classList.add('inactive');
-            this.broadcastGameStatusMessage(message, false);
-            return false;
+
+            if (startGameBtn) startGameBtn.classList.remove('inactive');
+            this.broadcastGameStatusMessage(message, true);
+
+            return true;
         }
 
-        if (totalPlayers < 1) { 
+        if (totalPlayers < 1) {
             const message = `Need at least one more player to start the game.`;
             if (startGameMessage) startGameMessage.textContent = message;
             if (startGameBtn) startGameBtn.classList.add('inactive');
@@ -1486,10 +1516,6 @@ class GameAdmin {
             const statementDiv = document.createElement('div');
             statementDiv.className = 'statement-option';
 
-            if (isOwnStatements) {
-                statementDiv.classList.add('inactive');
-            }
-
             const radio = document.createElement('input');
             radio.type = 'radio';
             radio.name = 'guess';
@@ -1512,30 +1538,25 @@ class GameAdmin {
             statementDiv.appendChild(radio);
             statementDiv.appendChild(label);
 
-            if (!isOwnStatements) {
+            if (isOwnStatements) {
+                statementDiv.classList.add('inactive');
+            } else {
+                statementDiv.classList.remove('inactive');
                 if (previousGuess !== null) {
-                    statementDiv.classList.add('inactive');
-
                     if (previousGuess === index) {
                         radio.checked = true;
                         statementDiv.style.opacity = '0.8';
                         statementDiv.style.borderColor = 'var(--primary-color)';
                     }
-
-                    radio.disabled = true;
                 } else {
-                    statementDiv.addEventListener('click', function() {
-                        if (!radio.disabled) {
-                            radio.checked = true;
+                    statementDiv.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        radio.checked = true;
 
-                            statementDiv.style.opacity = '0.8';
-                            statementDiv.style.borderColor = 'var(--primary-color)';
+                        statementDiv.style.opacity = '0.8';
+                        statementDiv.style.borderColor = 'var(--primary-color)';
 
-                            const allRadios = statementsContainer.querySelectorAll('input[type="radio"]');
-                            allRadios.forEach(r => r.disabled = true);
-
-                            this.submitGuess(currentPlayer.playerId, index);
-                        }
+                        this.submitGuess(currentPlayer.playerId, index);
                     }.bind(this));
                 }
             }
@@ -1570,12 +1591,6 @@ class GameAdmin {
                 targetPlayerId: playerId,
                 guessIndex: statementIndex
             }));
-
-            const radioButtons = document.querySelectorAll('input[name="guess"]');
-            radioButtons.forEach(radio => {
-                radio.parentElement.classList.add('inactive');
-                radio.classList.add('inactive');
-            });
 
             const submitButton = document.getElementById('submit-guess-button');
             if (submitButton) {
@@ -2481,13 +2496,13 @@ class GameAdmin {
                     scoreItem.className = 'score-item';
 
                     const correctLies = player.lieCorrectCount || 0;
-                    const totalLieRounds = scoreData.lieRoundsTotal || 0;
+                    const playerGuesses = player.totalGuesses || 0;
 
                     scoreItem.innerHTML = `
                         <div class="score-name">${player.name}</div>
                         <div class="score-details">
                             <span class="success-rate">${correctLies} lies detected</span>
-                            <span class="details">(${correctLies}/${totalLieRounds})</span>
+                            <span class="details">(${correctLies}/${playerGuesses})</span>
                         </div>
                     `;
 
@@ -2577,6 +2592,33 @@ class GameAdmin {
                 summaryText.textContent = summaryLines.join(' ');
             }
         }
+    }
+
+    updateGameProgressBar(data) {
+        const progressBar = document.getElementById('gameProgressBar');
+        const currentRoundNum = document.getElementById('currentRoundNum');
+        const totalRoundsNum = document.getElementById('totalRoundsNum');
+
+        if (!progressBar || !currentRoundNum || !totalRoundsNum || !data.currentSetIndex || !data.totalSets) return;
+
+        const currentSetIndex = data.currentSetIndex;
+        const totalSets = data.totalSets;
+
+        let progressPercentage = 0;
+
+        if (this.gamePhase === 'setup') {
+            progressPercentage = 0;
+        } else if (this.gamePhase === 'gameEnd') {
+            progressPercentage = 100;
+        } else {
+            progressPercentage = (currentSetIndex / totalSets) * 100;
+        }
+
+        progressBar.style.width = `${progressPercentage}%`;
+        progressBar.style.background = 'linear-gradient(to right, #6db3f2, #4a8ed4)';
+
+        currentRoundNum.textContent = currentSetIndex;
+        totalRoundsNum.textContent = totalSets;
     }
 
     handleGameCountdown(seconds) {

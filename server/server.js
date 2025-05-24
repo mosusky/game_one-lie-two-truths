@@ -50,7 +50,7 @@ async function validateApiCode(code) {
             path: `/api/validate-code/${code}`,
             method: 'GET',
             headers: {
-                'Authorization': process.env.API_AUTH_TOKEN_LIE_TRUTHS
+                'Authorization': process.env.TEAMPLAY_API_TOKEN
             }
         };
 
@@ -150,7 +150,7 @@ class Game {
 
         this.playerOrder = [];
         this.scores = new Map();
-        this.readyPlayers = new Set(); 
+        this.readyPlayers = new Set();
         this.allSubmittedPlayers = new Set();
         this.currentPlayerIndex = 0;
         this.allStatementSets = [];
@@ -629,17 +629,89 @@ class Game {
     }
 
     getScores() {
+        this.players.forEach(player => {
+            player.score = 0;
+            player.lieCorrectCount = 0;
+            player.guessesReceived = 0;
+            player.successfulDeceptions = 0;
+        });
+
+        this.adminScore = 0;
+        this.adminLieCorrectCount = 0;
+        this.adminGuessesReceived = 0;
+        this.adminSuccessfulDeceptions = 0;
+
+        this.allStatementSets.forEach(set => {
+            if (!set.setId) return;
+
+            if (this.gamePhase === 'guessing' && this.currentSet && set.setId === this.currentSet.setId) {
+                if (config.logsenabled) console.log(`Skipping current active set ${set.setId} for score calculation - game still in progress`);
+                return;
+            }
+
+            if (set.currentLieIndex === undefined) {
+                return;
+            }
+
+            const lieIndex = set.currentLieIndex;
+
+            const targetPlayerId = set.playerId;
+            const targetPlayer = this.players.get(targetPlayerId);
+
+            this.players.forEach((player, playerId) => {
+                if (playerId === targetPlayerId) return;
+
+                if (targetPlayerId === 'admin') {
+                    this.adminGuessesReceived++;
+                } else if (targetPlayer) {
+                    targetPlayer.guessesReceived++;
+                }
+
+                if (!player.guesses || player.guesses[set.setId] === undefined) return;
+
+                const guessIndex = player.guesses[set.setId];
+                const isCorrect = lieIndex === guessIndex;
+
+                if (isCorrect) {
+                    player.score++;
+                    player.lieCorrectCount++;
+                } else {
+                    if (targetPlayerId === 'admin') {
+                        this.adminSuccessfulDeceptions++;
+                    } else if (targetPlayer) {
+                        targetPlayer.successfulDeceptions++;
+                    }
+                }
+            });
+
+            if (this.adminName && this.adminGuesses && this.adminGuesses[set.setId] !== undefined) {
+                if (targetPlayerId === 'admin') return;
+
+                if (targetPlayer) {
+                    targetPlayer.guessesReceived++;
+                }
+
+                const guessIndex = this.adminGuesses[set.setId];
+                const isCorrect = lieIndex === guessIndex;
+
+                if (isCorrect) {
+                    this.adminScore++;
+                    this.adminLieCorrectCount++;
+                } else if (targetPlayer) {
+                    targetPlayer.successfulDeceptions++;
+                }
+            }
+        });
+
         const scores = {
             teams: [],
             players: [],
             bestGuessers: [],
             bestDeceivers: [],
-            lieRoundsTotal: this.lieRoundsTotal || 0
+            lieRoundsTotal: this.allStatementSets.length || 0
         };
 
         for (const [playerId, player] of this.players.entries()) {
-            if (player.score === undefined) player.score = 0;
-            if (player.lieCorrectCount === undefined) player.lieCorrectCount = 0;
 
             const totalGuesses = player.guesses ? Object.keys(player.guesses).length : 0;
             const correctGuesses = player.score;
@@ -876,7 +948,7 @@ class Game {
                 playerName: this.adminName || 'Admin',
                 teamId: this.adminTeamId || 0,
                 used: false,
-                setId: `admin_${set.round}_${uuidv4().slice(0, 8)}` 
+                setId: `admin_${set.round}_${uuidv4().slice(0, 8)}`
             }));
             this.allStatementSets.push(...adminSets);
         }
@@ -889,7 +961,7 @@ class Game {
                     playerName: player.name,
                     teamId: player.teamId || 0,
                     used: false,
-                    setId: `${playerId}_${set.round}_${uuidv4().slice(0, 8)}` 
+                    setId: `${playerId}_${set.round}_${uuidv4().slice(0, 8)}`
                 }));
                 this.allStatementSets.push(...playerSets);
             }
@@ -898,7 +970,6 @@ class Game {
         this.allStatementSets = this.shuffleArray(this.allStatementSets);
 
         if (config.logsenabled) {
-            console.log(this.allStatementSets, 123);
             console.log(`Gathered ${this.allStatementSets.length} statement sets for the game`);
         }
     }
@@ -911,7 +982,6 @@ class Game {
         this.currentPlayerIndex = 0;
         this.gameEvents = [];
         this.teamScores = {};
-        this.lieRoundsTotal = 0;
 
         this.adminScore = 0;
         this.adminGuesses = {};
@@ -1127,49 +1197,10 @@ class Game {
 
         const targetPlayer = targetPlayerId === 'admin' ? 'admin' : this.players.get(targetPlayerId);
 
-        if (targetPlayerId === 'admin') {
-            if (this.adminGuessesReceived === undefined) this.adminGuessesReceived = 0;
-            if (this.adminSuccessfulDeceptions === undefined) this.adminSuccessfulDeceptions = 0;
-
-            this.adminGuessesReceived++;
-        } else if (targetPlayer) {
-            if (targetPlayer.guessesReceived === undefined) targetPlayer.guessesReceived = 0;
-            if (targetPlayer.successfulDeceptions === undefined) targetPlayer.successfulDeceptions = 0;
-
-            targetPlayer.guessesReceived++;
-        }
-
         if (this.currentQuestionType === 'truth') {
             isCorrect = lieShuffledIndex !== guessIndex;
-
-            if (isCorrect) {
-                if (playerId === 'admin') {
-                    this.adminScore++;
-                } else {
-                    player.score++;
-                }
-            }
         } else {
             isCorrect = lieShuffledIndex === guessIndex;
-
-            if (isCorrect) {
-                if (playerId === 'admin') {
-                    this.adminScore++;
-                    this.adminLieCorrectCount++;
-                } else {
-                    player.score++;
-                    player.lieCorrectCount++;
-                }
-            }
-            else {
-                if (targetPlayerId === 'admin') {
-                    this.adminSuccessfulDeceptions++;
-                    if (config.logsenabled) console.log(`Admin deceived player ${playerId}! adminSuccessfulDeceptions=${this.adminSuccessfulDeceptions}, adminGuessesReceived=${this.adminGuessesReceived}`);
-                } else if (targetPlayer) {
-                    targetPlayer.successfulDeceptions++;
-                    if (config.logsenabled) console.log(`Player ${targetPlayerId} deceived player ${playerId}! successfulDeceptions=${targetPlayer.successfulDeceptions}, guessesReceived=${targetPlayer.guessesReceived}`);
-                }
-            }
         }
 
         if (config.logsenabled) console.log(`Player ${playerId} guessed statement ${guessIndex} as a ${this.currentQuestionType}. ` +
@@ -1230,6 +1261,30 @@ class Game {
             questionType: this.currentQuestionType
         });
 
+        const allPlayersSubmitted = this.checkAllPlayersSubmitted();
+        if (allPlayersSubmitted && this.gamePhase === 'guessing') {
+            if (config.logsenabled) console.log('All players have submitted guesses, moving to next player');
+
+            const remainingTime = this.countdownEndTime ? Math.ceil((this.countdownEndTime - Date.now()) / 1000) : 0;
+            const hasEnoughTimeForMessage = remainingTime >= 3;
+
+            if (this.countdownTimeoutId) {
+                clearTimeout(this.countdownTimeoutId);
+                this.countdownTimeoutId = null;
+            }
+
+            if (hasEnoughTimeForMessage) {
+                this.broadcastToAll({
+                    type: 'show_message',
+                    message: 'All players have submitted their guesses!',
+                    duration: 3000,
+                    movingToNext: true
+                });
+
+                setTimeout(() => this.moveToNextPlayer(), 4000);
+            }
+        }
+
         return {
             success: true,
             isCorrect: isCorrect,
@@ -1257,6 +1312,8 @@ class Game {
     broadcastGameState(targetPlayerId = null) {
         const baseGameState = {
             type: 'game_state',
+            currentSetIndex: this.currentSetIndex + 1,
+            totalSets: this.allStatementSets.length,
             gamePhase: this.gamePhase,
             gameStarted: this.gameStarted,
             gameEnded: this.gameEnded,
@@ -1409,13 +1466,8 @@ class Game {
 
         this.currentGuessingPlayerId = currentSet.playerId;
 
-        this.currentQuestionType = Math.random() < 0.5 ? 'truth' : 'lie';
+        this.currentQuestionType = 'lie'; 
         if (config.logsenabled) console.log(`This guessing round asks players to select a ${this.currentQuestionType}`);
-
-        if (this.currentQuestionType === 'lie') {
-            if (this.lieRoundsTotal === undefined) this.lieRoundsTotal = 0;
-            this.lieRoundsTotal++;
-        }
 
         let statements = [];
 
@@ -1440,6 +1492,7 @@ class Game {
         for (let i = 0; i < statements.length; i++) {
             if (statements[i].isLie) {
                 this.currentLieShuffledIndex = i;
+                currentSet.currentLieIndex = i;
                 break;
             }
         }
@@ -1562,9 +1615,21 @@ class Game {
         const usedSets = this.allStatementSets.filter(set => set.used).length;
         this.currentRound = usedSets + 1;
 
+        const lieStatement = this.currentStatements[this.currentLieShuffledIndex].text;
+        const playerName = this.currentSet.playerName;
+
+        this.broadcastToAll({
+            type: 'show_message',
+            message: `${playerName}'s lie was: "${lieStatement}"`,
+            duration: 3000,
+            movingToNext: true
+        });
+
         if (usedSets >= this.allStatementSets.length) {
-            if (config.logsenabled) console.log('All statement sets have been used, moving to results');
-            this.endGuessingPhase();
+            setTimeout(() => {
+                if (config.logsenabled) console.log('All statement sets have been used, moving to results');
+                this.endGuessingPhase();
+            }, 4000);
             return;
         }
 
@@ -1572,7 +1637,7 @@ class Game {
 
         setTimeout(() => {
             this.startGuessingRound();
-        }, 1000);
+        }, 4000);
     }
 
     endGuessingPhase() {
@@ -1598,11 +1663,96 @@ class Game {
         return newArray;
     }
 
+    checkAllPlayersSubmitted() {
+        if (!this.currentSet || !this.currentSet.setId) {
+            return false;
+        }
+
+        const currentSetId = this.currentSet.setId;
+
+        let activePlayers = 0;
+        let submittedCount = 0;
+
+        if (this.admin && this.adminName && this.currentGuessingPlayerId !== 'admin') {
+            activePlayers++;
+            if (this.adminGuesses && this.adminGuesses[currentSetId] !== undefined) {
+                submittedCount++;
+            }
+        }
+
+        this.players.forEach((player, playerId) => {
+            if (playerId !== this.currentGuessingPlayerId) {
+                activePlayers++;
+                if (player.guesses && player.guesses[currentSetId] !== undefined) {
+                    submittedCount++;
+                }
+            }
+        });
+
+        if (config.logsenabled) console.log(`Guesses submitted: ${submittedCount}/${activePlayers}`);
+
+        return activePlayers > 0 && submittedCount === activePlayers;
+    }
+
+    calculatePlayerGuessStats(targetPlayerId) {
+        const stats = {
+            guessesReceived: 0,
+            successfulDeceptions: 0
+        };
+
+        const playerSets = this.allStatementSets.filter(set => {
+            return set.playerId === targetPlayerId ||
+                  (targetPlayerId === 'admin' && set.playerId === 'admin');
+        });
+
+        if (playerSets.length === 0) {
+            return stats;
+        }
+
+        playerSets.forEach(set => {
+            const setId = set.setId;
+            const lieIndex = set.lieIndex; 
+
+            this.players.forEach((player, playerId) => {
+                if (playerId === targetPlayerId) return;
+
+                if (player.guesses && player.guesses[setId] !== undefined) {
+                    stats.guessesReceived++;
+
+                    if (player.guesses[setId] !== lieIndex) {
+                        stats.successfulDeceptions++;
+                    }
+                }
+            });
+
+            if (targetPlayerId !== 'admin' && this.adminGuesses && this.adminGuesses[setId] !== undefined) {
+                stats.guessesReceived++;
+
+                if (this.adminGuesses[setId] !== lieIndex) {
+                    stats.successfulDeceptions++;
+                }
+            }
+        });
+
+        return stats;
+    }
+
     calculateFinalScores() {
         if (config.logsenabled) console.log('Calculating final scores');
 
         this.scores.clear();
 
+        this.players.forEach((player, playerId) => {
+            const stats = this.calculatePlayerGuessStats(playerId);
+            player.guessesReceived = stats.guessesReceived;
+            player.successfulDeceptions = stats.successfulDeceptions;
+        });
+
+        if (this.adminName) {
+            const adminStats = this.calculatePlayerGuessStats('admin');
+            this.adminGuessesReceived = adminStats.guessesReceived;
+            this.adminSuccessfulDeceptions = adminStats.successfulDeceptions;
+        }
 
         if (this.teamMode !== 'allVsAll') {
             this.teams.forEach((players, teamId) => {
@@ -1649,7 +1799,7 @@ class Game {
     }
 
     sendGameLogs() {
-        if (this.enableTeamPlayLogging && process.env.API_AUTH_TOKEN_LIE_TRUTHS) {
+        if (this.enableTeamPlayLogging && process.env.TEAMPLAY_API_TOKEN) {
             const gameLog = {
                 game_code: this.gameCode,
                 api_code: this.apiCode,
@@ -1661,7 +1811,7 @@ class Game {
                 path: '/api/save-game-log',
                 method: 'POST',
                 headers: {
-                    'Authorization': process.env.API_AUTH_TOKEN_LIE_TRUTHS,
+                    'Authorization': process.env.TEAMPLAY_API_TOKEN,
                     'Content-Type': 'application/json'
                 }
             };
@@ -2082,14 +2232,46 @@ wss.on('connection', (ws) => {
                                     countdown: countdownInfo
                                 });
 
+                                let checkSubmissionsInterval;
+                                setTimeout(() => {
+                                    checkSubmissionsInterval = setInterval(() => {
+                                        const totalPlayers = game.players.size;
+                                        const readyPlayers = Array.from(game.players.values()).filter(player => player.submittedStatements).length;
+
+                                        if (totalPlayers > 0 && readyPlayers === totalPlayers) {
+                                            clearInterval(checkSubmissionsInterval);
+
+                                            if (game.countdownTimeoutId) {
+                                                clearTimeout(game.countdownTimeoutId);
+                                                game.countdownTimeoutId = null;
+                                            }
+
+                                            if (config.logsenabled) console.log('All players submitted statements during countdown - proceeding immediately');
+
+                                            game.broadcastToAll({
+                                                type: 'show_message',
+                                                message: 'All players submitted - starting game now!',
+                                                duration: 3000,
+                                                movingToNext: true
+                                            });
+
+                                            setTimeout(() => {
+                                                game.gamePhase = 'guessing';
+                                                game.gatherStatementSets();
+                                                game.initializeGuessingPhase(answerTime);
+                                                game.broadcastGameState();
+                                            }, 3500);
+                                        }
+                                    }, 1000); 
+                                }, 3000); 
+
                                 game.scheduleCountdownCompletion(countdownSeconds, () => {
+                                    clearInterval(checkSubmissionsInterval);
+
                                     game.gamePhase = 'guessing';
-
+                                    game.gatherStatementSets();
                                     game.initializeGuessingPhase(answerTime);
-
                                     game.broadcastGameState();
-
-                                    if (config.logsenabled) console.log(`Transitioned to guessing phase after ${countdownSeconds}s countdown`);
                                 });
                             }
                         }

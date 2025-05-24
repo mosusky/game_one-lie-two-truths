@@ -920,6 +920,47 @@ h2 {
     display: flex
 }
 
+.message-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(255, 255, 255, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+    opacity: 0;
+}
+
+.message-overlay.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.message-content {
+    border-radius: 8px;
+    padding: 30px;
+    text-align: center;
+    max-width: 90%;
+    animation: message-pop 0.4s ease forwards;
+}
+
+.message-text {
+    font-size: 22px;
+    font-weight: 600;
+    color: #333;
+}
+
+@keyframes message-pop {
+    0% { transform: scale(0.8); opacity: 0; }
+    70% { transform: scale(1.05); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
 .countdown-number {
     font-size: 120px;
     color: #000;
@@ -1111,13 +1152,20 @@ select {
 .current-player-info {
     text-align: center;
     margin-bottom: 20px;
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    justify-content: center;
+}
+
+.current-player-info > * {
+    margin: 0px;
 }
 
 .current-player-name {
     font-size: 1.5rem;
     font-weight: bold;
     color: var(--primary-color);
-    margin-top: 5px;
 }
 
 .statements-container {
@@ -1128,7 +1176,6 @@ select {
 }
 
 .statement-option {
-    background: #f9f9f9;
     border-radius: 8px;
     border: 2px solid #ddd;
     transition: all 0.3s ease;
@@ -1532,6 +1579,9 @@ select {
 
 @media (max-width: 768px) {
     .comparison-images {
+        flex-direction: column;
+    }
+    .current-player-info {
         flex-direction: column;
     }
 }
@@ -2431,4 +2481,66 @@ select {
 
 .player-score {
     margin-bottom: 5px;
+}
+
+.submit-button-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.hide-checkmark i {
+    display: none;
+}
+
+.game-progress {
+    background-color: var(--color-bg-light);
+    border-radius: 10px;
+    margin-bottom: 20px;
+    display: flex;
+    gap: 20px;
+}
+
+.admin-game-progress {
+    margin-top: 10px;
+}
+
+.progress-label {
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--color-text-dark);
+    font-size: 14px;
+}
+
+.progress-container {
+    background-color: var(--color-bg-white);
+    height: 12px;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 8px;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+    flex: 1;
+}
+
+.progress-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(to right, #6db3f2, #4a8ed4);
+    border-radius: 10px;
+    transition: width 0.5s ease-in-out;
+}
+
+.progress-info {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--color-text-medium);
+}
+
+.current-phase {
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background-color: var(--color-primary-light);
+    color: var(--color-text-dark);
 }
