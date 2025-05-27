@@ -50,7 +50,7 @@ async function validateApiCode(code) {
             path: `/api/validate-code/${code}`,
             method: 'GET',
             headers: {
-                'Authorization': process.env.TEAMPLAY_API_TOKEN
+                'Authorization': process.env.API_AUTH_TOKEN_LIE_TRUTHS
             }
         };
 
@@ -1799,7 +1799,7 @@ class Game {
     }
 
     sendGameLogs() {
-        if (this.enableTeamPlayLogging && process.env.TEAMPLAY_API_TOKEN) {
+        if (this.enableTeamPlayLogging && process.env.API_AUTH_TOKEN_LIE_TRUTHS) {
             const gameLog = {
                 game_code: this.gameCode,
                 api_code: this.apiCode,
@@ -1811,7 +1811,7 @@ class Game {
                 path: '/api/save-game-log',
                 method: 'POST',
                 headers: {
-                    'Authorization': process.env.TEAMPLAY_API_TOKEN,
+                    'Authorization': process.env.API_AUTH_TOKEN_LIE_TRUTHS,
                     'Content-Type': 'application/json'
                 }
             };

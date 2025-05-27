@@ -981,7 +981,7 @@ class PlayerController {
         const port = window.location.port || '80';
         const isLocalDevelopment = port === '777';
         const protocol = isLocalDevelopment ? "ws:" : "wss:";
-        const host = isLocalDevelopment ? "127.0.0.1" : port === '3082' ? 'deploy.ylo.one' : 'gs.team-play.online/truths-and-lies-server';
+        const host = isLocalDevelopment ? "127.0.0.1" : port === '3082' ? 'deploy.ylo.one' : 'gs.team-play.online/one-lie-two-truths-server';
         const wsPort = isLocalDevelopment ? '8083' : port === '3082' ? '3092' : undefined;
 
         const wsUrl = wsPort ? `${protocol}//${host}:${wsPort}` : `${protocol}//${host}`;
