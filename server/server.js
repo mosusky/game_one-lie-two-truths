@@ -1673,6 +1673,7 @@ class Game {
         let activePlayers = 0;
         let submittedCount = 0;
 
+        //if (this.admin && this.adminName && this.currentGuessingPlayerId !== 'admin') {
         if (this.admin && this.adminName && this.currentGuessingPlayerId !== 'admin') {
             activePlayers++;
             if (this.adminGuesses && this.adminGuesses[currentSetId] !== undefined) {
