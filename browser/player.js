@@ -1199,6 +1199,10 @@ class PlayerController {
                             this.guessingPhase = false;
                         }
                     }
+
+                    if (this.gameStarted && this.guessingPhase) {
+                        document.getElementById('waitingScreen')?.classList.remove('hidden');
+                    }
                     break;
 
                 case 'team_assignment':
